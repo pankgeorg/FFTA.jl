@@ -25,10 +25,17 @@ Options for `suite.jl`:
 | `--maxlog2 K` | largest 1D size 2^K (default 22) |
 | `--seconds S` | time budget per measurement (default 0.5) |
 | `--only 1d,nd,batched,threads` | run a subset of the sections |
+| `--kinds fft,rfft` | run only complex (`fft`) or only real (`rfft`) cases |
 | `--out FILE` | output JSON (default `results_suite.json`) |
 
 `-t N` controls the thread count used for the FFTW-threading section (FFTA
 is single-threaded). `report.jl` accepts several JSON files and merges them.
+
+To compare two runs (e.g. before and after a change to FFTA):
+
+```bash
+julia --project=. compare.jl before.json after.json      # prints a markdown table
+```
 
 The suite loads FFTA and FFTW into the **same process** and reaches FFTA's
 `plan_*` methods with `invoke`, because FFTW's methods on `StridedArray` are

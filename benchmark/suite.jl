@@ -12,7 +12,7 @@ against FFTW in the same process.
 Usage (from the `benchmark/` directory):
 
     julia --project=. -t 8 suite.jl [--quick] [--out results_suite.json]
-                                    [--only 1d,nd,batched,threads]
+                                    [--only 1d,nd,batched,threads] [--kinds fft,rfft]
                                     [--maxlog2 22] [--seconds 0.5]
 
 Then `julia --project=. report.jl results_suite.json` renders REPORT.md.
@@ -43,6 +43,7 @@ end
 const QUICK    = "--quick" in ARGS
 const OUTFILE  = getopt("--out", joinpath(@__DIR__, "results_suite.json"))
 const ONLY     = split(getopt("--only", "1d,nd,batched,threads"), ",")
+const KINDS    = Symbol.(split(getopt("--kinds", "fft,rfft"), ","))
 const MAXLOG2  = parse(Int, getopt("--maxlog2", QUICK ? "16" : "22"))
 const SECONDS  = parse(Float64, getopt("--seconds", QUICK ? "0.2" : "0.5"))
 const NTHREADS = Threads.nthreads()
@@ -175,6 +176,7 @@ sizestr(sz) = join(sz, "x")
 # kind ∈ :fft, :rfft  ;  dims: Int or tuple ;  T: real element type
 function bench_case!(kind::Symbol, T::Type, sz::Tuple, dims; shape::String,
                      fftw_threads::Int = 1, measure::Bool = false, extra = Dict())
+    kind in KINDS || return nothing
     FFTW.set_num_threads(fftw_threads)
     x = kind === :fft ? randn(Complex{T}, sz) : randn(T, sz)
     n_along = prod(size(x, d) for d in dims)
