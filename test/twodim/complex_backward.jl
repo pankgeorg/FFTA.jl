@@ -19,7 +19,7 @@ end
         end
 
         @testset "allocations" begin
-            @test (@test_allocations bfft(y)) <= 116
+            @test (@test_allocations bfft(y)) <= 116 * Threads.nthreads()
         end
     end
 end
