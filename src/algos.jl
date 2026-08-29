@@ -202,6 +202,12 @@ function fft_pow2_radix4!(
         return
     end
 
+    # Small sizes have straight-line codelets for the floating-point element
+    # types (see codelets.jl); other types continue with the recursion.
+    if N <= CODELET_MAX && _pow2_codelet!(out, in, N, start_out, stride_out, start_in, stride_in, d)
+        return
+    end
+
     dir = direction_sign(d)
 
     # If N is 4, compute an unrolled radix-2 FFT and return
