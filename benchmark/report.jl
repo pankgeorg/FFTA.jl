@@ -161,8 +161,10 @@ open(OUT, "w") do io
   / (FFTW plan+exec), i.e. the one-shot `fft(x)` cost ratio.
 * **exec ratio** = FFTA exec / FFTW exec — values > 1 mean FFTA is slower.
 * **alloc/exec** = bytes allocated by one planned execution (`@allocated`).
-* FFTW is single-threaded except in the *Threading* section. FFTA has no
-  threading.
+* FFTW and FFTA are single-threaded (FFTA: one worker) except in the
+  *Threading* section, where both are planned with the same thread count
+  (FFTA versions with a `num_threads` keyword thread across the pencils of
+  multidimensional and batched transforms).
 * Size classes: `pow2` = 2^k; `smooth` = 2^a·3^b·5^c·7^d (not a power of 2);
   `prime`; `awkward` = (prime > 73) × small factor. Primes < 73 use FFTA's
   O(n²) DFT leaf, primes ≥ 73 use Bluestein.
@@ -271,14 +273,15 @@ open(OUT, "w") do io
     let rows = filter(e -> e["fftw_threads"] > 1, results)
         if !isempty(rows)
             nt = rows[1]["fftw_threads"]
-            println(io, "## Threading: FFTW with $nt threads vs FFTA (single-threaded)\n")
-            println(io, "| size | dims | FFTW 1 thread | FFTW $nt threads | FFTW speedup | FFTA | FFTA / FFTW($nt) |\n|:--|:--|--:|--:|--:|--:|--:|")
+            println(io, "## Threading: FFTW vs FFTA with $nt threads\n")
+            println(io, "| size | dims | FFTW 1 thread | FFTW $nt threads | FFTW speedup | FFTA 1 thread | FFTA $nt threads | FFTA speedup | FFTA / FFTW ($nt thr) |\n|:--|:--|--:|--:|--:|--:|--:|--:|--:|")
             for e in sort(rows; by = e -> (e["shape"], prod(e["size"])))
                 base = filter(b -> b["kind"] == e["kind"] && b["T"] == e["T"] && b["size"] == e["size"] && b["dims"] == e["dims"] &&
                                    b["fftw_threads"] == 1 && b["fftw_flags"] == "ESTIMATE", results)
                 t1 = isempty(base) ? nothing : base[1]["fftw_exec_min"]
+                a1 = isempty(base) ? nothing : get(base[1], "ffta_exec_min", nothing)
                 tn = e["fftw_exec_min"]; ta = get(e, "ffta_exec_min", nothing)
-                println(io, "| $(sizestr(e)) | $(join(e["dims"], ",")) | $(fmt_t(t1)) | $(fmt_t(tn)) | $(t1 === nothing ? "—" : fmt_r(t1 / tn)) | $(fmt_t(ta)) | $(ta === nothing ? "—" : fmt_r(ta / tn)) |")
+                println(io, "| $(sizestr(e)) | $(join(e["dims"], ",")) | $(fmt_t(t1)) | $(fmt_t(tn)) | $(t1 === nothing ? "—" : fmt_r(t1 / tn)) | $(fmt_t(a1)) | $(fmt_t(ta)) | $(a1 === nothing || ta === nothing ? "—" : fmt_r(a1 / ta)) | $(ta === nothing ? "—" : fmt_r(ta / tn)) |")
             end
             println(io)
         end

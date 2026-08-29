@@ -55,14 +55,28 @@ const NTHREADS = Threads.nthreads()
 # ---------------------------------------------------------------------------
 # FFTA plan constructors that bypass FFTW's more specific methods
 # ---------------------------------------------------------------------------
-ffta_plan_fft(x::AbstractArray{T,N}, dims) where {T<:Complex,N} =
-    invoke(AbstractFFTs.plan_fft, Tuple{AbstractArray{T,N}, Any}, x, dims)
-ffta_plan_bfft(x::AbstractArray{T,N}, dims) where {T<:Complex,N} =
-    invoke(AbstractFFTs.plan_bfft, Tuple{AbstractArray{T,N}, Any}, x, dims)
-ffta_plan_rfft(x::AbstractArray{T,N}, dims) where {T<:Real,N} =
-    invoke(AbstractFFTs.plan_rfft, Tuple{AbstractArray{T,N}, FFTA.RegionTypes}, x, dims)
-ffta_plan_brfft(x::AbstractArray{T,N}, len, dims) where {T<:Complex,N} =
-    invoke(AbstractFFTs.plan_brfft, Tuple{AbstractArray{T,N}, Int, FFTA.RegionTypes}, x, len, dims)
+# `num_threads` is FFTA's keyword for the number of workers a plan may use
+# (versions without it ignore unknown keywords).
+ffta_plan_fft(x::AbstractArray{T,N}, dims; num_threads = 1) where {T<:Complex,N} =
+    invoke(AbstractFFTs.plan_fft, Tuple{AbstractArray{T,N}, Any}, x, dims; num_threads)
+ffta_plan_bfft(x::AbstractArray{T,N}, dims; num_threads = 1) where {T<:Complex,N} =
+    invoke(AbstractFFTs.plan_bfft, Tuple{AbstractArray{T,N}, Any}, x, dims; num_threads)
+# (older FFTA annotates `region::RegionTypes`; the signature tuple must match the
+# method actually defined, so try the unannotated one first)
+function ffta_plan_rfft(x::AbstractArray{T,N}, dims; num_threads = 1) where {T<:Real,N}
+    try
+        invoke(AbstractFFTs.plan_rfft, Tuple{AbstractArray{T,N}, Any}, x, dims; num_threads)
+    catch
+        invoke(AbstractFFTs.plan_rfft, Tuple{AbstractArray{T,N}, FFTA.RegionTypes}, x, dims; num_threads)
+    end
+end
+function ffta_plan_brfft(x::AbstractArray{T,N}, len, dims; num_threads = 1) where {T<:Complex,N}
+    try
+        invoke(AbstractFFTs.plan_brfft, Tuple{AbstractArray{T,N}, Integer, Any}, x, len, dims; num_threads)
+    catch
+        invoke(AbstractFFTs.plan_brfft, Tuple{AbstractArray{T,N}, Int, FFTA.RegionTypes}, x, len, dims; num_threads)
+    end
+end
 
 # With both packages loaded, `plan_rfft(::Vector{Float64}, ::Int)` is *ambiguous*
 # (FFTW's `StridedArray` method vs FFTA's `region::RegionTypes` method), so FFTW's
@@ -203,7 +217,8 @@ function bench_case!(kind::Symbol, T::Type, sz::Tuple, dims; shape::String,
 
     # ---- FFTA
     try
-        mk_a = kind === :fft ? (() -> ffta_plan_fft(x, dims)) : (() -> ffta_plan_rfft(x, dims))
+        mk_a = kind === :fft ? (() -> ffta_plan_fft(x, dims; num_threads = fftw_threads)) :
+                               (() -> ffta_plan_rfft(x, dims; num_threads = fftw_threads))
         pa = mk_a()
         ya = pa * x
         entry["ffta_relerr"] = relerr(ya, yw)
