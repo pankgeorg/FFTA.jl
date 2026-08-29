@@ -208,12 +208,12 @@ function bench_case!(kind::Symbol, T::Type, sz::Tuple, dims; shape::String,
         ya = pa * x
         entry["ffta_relerr"] = relerr(ya, yw)
         tp = bench_plan(mk_a); entry["ffta_plan_min"] = tp.min; entry["ffta_plan_median"] = tp.median
-        if kind === :fft
+        if applicable(mul!, ya, pa, x)
             te = bench_min(() -> mul!(ya, pa, x))
             entry["ffta_exec_alloc"] = (@allocated mul!(ya, pa, x))
             entry["ffta_exec_api"] = "mul!"
         else
-            # FFTA real plans only implement `*` (no mul!)
+            # older FFTA real plans only implement `*` (no mul!)
             te = bench_min(() -> pa * x)
             entry["ffta_exec_alloc"] = (@allocated pa * x)
             entry["ffta_exec_api"] = "*"

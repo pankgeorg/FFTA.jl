@@ -153,8 +153,8 @@ open(OUT, "w") do io
   `StridedArray` methods would otherwise be selected). Every FFTA result is
   compared with FFTW's (`rel. err` = ‖y_FFTA − y_FFTW‖ / ‖y_FFTW‖).
 * **exec** = execution of a pre-built plan (`mul!(y, p, x)` where supported;
-  FFTA real plans only implement `p * x`, which includes the output
-  allocation). Times are the **minimum** over samples collected during the
+  if a plan only implements `p * x`, that is timed instead and includes the
+  output allocation — see the *FFTA API* column of the allocation table). Times are the **minimum** over samples collected during the
   time budget (batched evals for sub-20 µs calls).
 * **plan** = time to construct a plan (FFTW with `FFTW.ESTIMATE`, the
   FFTW.jl default, unless stated otherwise). **cold ratio** = (FFTA plan+exec)
@@ -289,11 +289,11 @@ open(OUT, "w") do io
     println(io, "| case | FFTA API | zero-alloc? | typical bytes |\n|:--|:--|:--|--:|")
     for (name, f) in (("1D complex fft, mul!", e -> e["kind"] == "fft" && e["shape"] == "1d" && e["class"] != "prime" && e["class"] != "awkward"),
                       ("1D complex fft, prime/awkward (Bluestein)", e -> e["kind"] == "fft" && e["shape"] == "1d" && (e["class"] == "prime" || e["class"] == "awkward") && e["n"] >= 73),
-                      ("1D rfft (`*`, includes output)", e -> e["kind"] == "rfft" && e["shape"] == "1d"),
+                      ("1D rfft", e -> e["kind"] == "rfft" && e["shape"] == "1d"),
                       ("2D/3D complex fft, mul!", e -> e["kind"] == "fft" && e["shape"] in ("2d", "3d")),
                       ("2D rfft", e -> e["kind"] == "rfft" && e["shape"] == "2d"),
                       ("batched complex fft, mul!", e -> e["kind"] == "fft" && startswith(e["shape"], "batched")),
-                      ("batched rfft (`*`, mapslices)", e -> e["kind"] == "rfft" && startswith(e["shape"], "batched")))
+                      ("batched rfft", e -> e["kind"] == "rfft" && startswith(e["shape"], "batched")))
         es = filter(e -> f(e) && haskey(e, "ffta_exec_alloc") && e["fftw_threads"] == 1, results)
         isempty(es) && continue
         al = [e["ffta_exec_alloc"] for e in es]
