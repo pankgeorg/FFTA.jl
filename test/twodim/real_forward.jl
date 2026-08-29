@@ -31,8 +31,12 @@ end
     x = randn(n, n + 1, n + 2)
 
     @testset "against 2D arrays with mapslices, r=$r" for r in [[1,2], [1,3], [2,3]]
-        # strided and contiguous pencils take different code paths; `@muladd`
-        # contraction can differ by an ulp between them
+        # `mapslices` copies each pencil to a contiguous Vector, and so does the
+        # copy-in path for strided pencils, which therefore reproduces it exactly;
+        # unit-stride pencils are handed to the kernels as views instead, and
+        # `@muladd` contraction in the kernels can differ by an ulp between the
+        # two specialisations. Any real defect (mis-strided pencil, transposed or
+        # dropped copy-back) would be O(1), far outside this tolerance.
         @test rfft(x, r) ≈ mapslices(rfft, x; dims = r) rtol=1e-13
     end
 end

@@ -33,8 +33,10 @@ end
     x = randn(n, n + 1, n + 2)
 
     @testset "against 1D array with mapslices, r=$r" for r in 1:3
-        # the pencil path reads strided views; `@muladd` contraction can differ
-        # from the contiguous specialisation by an ulp
+        # unit-stride pencils are handed to the kernels as views (`mapslices`
+        # copies them), and `@muladd` contraction can differ by an ulp between
+        # the two specialisations; strided pencils go through a copy that
+        # reproduces `mapslices` exactly. A real defect would be O(1).
         @test rfft(x, r) ≈ mapslices(rfft, x; dims = r) rtol=1e-13
     end
 end
