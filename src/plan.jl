@@ -15,22 +15,29 @@ graphs but with their own workspace) and pencil buffers. A plan owns one
 functions); pencils of a multidimensional or batched transform are
 distributed over them.
 """
-struct Worker{T,N}
+struct Worker{T,N,S<:Real}
     callgraph::NTuple{N,CallGraph{T}}
     obuf::Vector{T}   # transform output of one pencil before it is copied back
     buf::Vector{T}    # real<->complex packing scratch, see `_re_buflen` (real plans only)
+    rbuf::Vector{S}   # contiguous copy of a strided real pencil, see `_re_pencil_loop!` (real plans only)
+    cbuf::Vector{T}   # contiguous copy of a strided complex pencil (real plans only)
 end
 
 # A call graph that shares the (immutable) nodes but has its own workspace.
 _clone_workspace(g::CallGraph{T}) where {T} =
     CallGraph{T}(g.nodes, [Vector{T}(undef, length(w)) for w in g.workspace], g.BLUESTEIN_CUTOFF)
 
-function _workers(cg::Tuple{CallGraph{T},Vararg{CallGraph{T}}}, ::Val{N}, num_threads::Int, buflen::Int) where {T,N}
+# `buflen` is the packing scratch length and `rlen` the real length of a real
+# plan (0 for complex plans, which need neither).
+function _workers(cg::Tuple{CallGraph{T},Vararg{CallGraph{T}}}, ::Val{N}, num_threads::Int, buflen::Int, rlen::Int = 0) where {T,N}
     num_threads >= 1 || throw(ArgumentError("num_threads must be at least 1"))
+    S = real(T)
     obuflen = maximum(g -> first(g.nodes).sz, cg)
-    workers = [Worker{T,N}(cg, Vector{T}(undef, obuflen), Vector{T}(undef, buflen))]
+    clen = rlen == 0 ? 0 : rlen ÷ 2 + 1
+    mk(graphs) = Worker{T,N,S}(graphs, Vector{T}(undef, obuflen), Vector{T}(undef, buflen), Vector{S}(undef, rlen), Vector{T}(undef, clen))
+    workers = [mk(cg)]
     for _ in 2:num_threads
-        push!(workers, Worker{T,N}(map(_clone_workspace, cg), Vector{T}(undef, obuflen), Vector{T}(undef, buflen)))
+        push!(workers, mk(map(_clone_workspace, cg)))
     end
     return workers
 end
@@ -38,14 +45,14 @@ end
 # Transforms with fewer elements than this are not split over threads.
 const THREAD_THRESHOLD = 1 << 15
 
-mutable struct FFTAPlan_cx{T,N,R<:RegionTypes{N}} <: FFTAPlan{T,N}
+mutable struct FFTAPlan_cx{T,N,R<:RegionTypes{N},S<:Real} <: FFTAPlan{T,N}
     const callgraph::NTuple{N,CallGraph{T}}
     const region::R
     const dir::Direction
-    const workers::Vector{Worker{T,N}}
+    const workers::Vector{Worker{T,N,S}}
     pinv::AbstractFFTs.ScaledPlan
-    FFTAPlan_cx{T,N,R}(cg::NTuple{N,CallGraph{T}}, r::R, dir::Direction, workers::Vector{Worker{T,N}}) where {T,N,R<:RegionTypes{N}} =
-        new{T,N,R}(cg, r, dir, workers)
+    FFTAPlan_cx{T,N,R}(cg::NTuple{N,CallGraph{T}}, r::R, dir::Direction, workers::Vector{Worker{T,N,S}}) where {T,N,R<:RegionTypes{N},S} =
+        new{T,N,R,S}(cg, r, dir, workers)
 end
 function FFTAPlan_cx{T,N}(
     cg::NTuple{N,CallGraph{T}}, r::R,
@@ -54,21 +61,21 @@ function FFTAPlan_cx{T,N}(
     FFTAPlan_cx{T,N,R}(cg, r, dir, _workers(cg, Val(N), num_threads, 0))
 end
 
-mutable struct FFTAPlan_re{T,N,R<:RegionTypes{N}} <: FFTAPlan{T,N}
+mutable struct FFTAPlan_re{T,N,R<:RegionTypes{N},S<:Real} <: FFTAPlan{T,N}
     const callgraph::NTuple{N,CallGraph{T}}
     const region::R
     const dir::Direction
     const flen::Int
-    const workers::Vector{Worker{T,N}}
+    const workers::Vector{Worker{T,N,S}}
     pinv::AbstractFFTs.ScaledPlan
-    FFTAPlan_re{T,N,R}(cg::NTuple{N,CallGraph{T}}, r::R, dir::Direction, flen::Int, workers::Vector{Worker{T,N}}) where {T,N,R<:RegionTypes{N}} =
-        new{T,N,R}(cg, r, dir, flen, workers)
+    FFTAPlan_re{T,N,R}(cg::NTuple{N,CallGraph{T}}, r::R, dir::Direction, flen::Int, workers::Vector{Worker{T,N,S}}) where {T,N,R<:RegionTypes{N},S} =
+        new{T,N,R,S}(cg, r, dir, flen, workers)
 end
 function FFTAPlan_re{T,N}(
     cg::NTuple{N,CallGraph{T}}, r::R,
     dir::Direction, flen::Int; num_threads::Int=Threads.nthreads()
 ) where {T,N,R<:RegionTypes{N}}
-    FFTAPlan_re{T,N,R}(cg, r, dir, flen, _workers(cg, Val(N), num_threads, _re_buflen(flen, dir)))
+    FFTAPlan_re{T,N,R}(cg, r, dir, flen, _workers(cg, Val(N), num_threads, _re_buflen(flen, dir), flen))
 end
 
 _num_threads(p::Union{FFTAPlan_cx,FFTAPlan_re}) = length(p.workers)
@@ -361,7 +368,7 @@ end
 
 @noinline function _execute_mdfft!(
     out::AbstractArray{U,N},
-    workers::Vector{Worker{T,M}},
+    workers::Vector{<:Worker{T,M}},
     dir::Direction,
     @nospecialize(region::RegionTypes),
 ) where {T,U,N,M}
@@ -392,7 +399,7 @@ write the worker's output buffer, which is then copied back.
 """
 function fft_along_dim!(
     A::AbstractArray{U,N},
-    workers::Vector{Worker{T,M}},
+    workers::Vector{<:Worker{T,M}},
     k::Int, d::Direction,
     ::Val{dim}
 ) where {T <: Complex{<:AbstractFloat}, U, N, M, dim}
@@ -567,14 +574,38 @@ function _brfft_pencil!(x::AbstractVector{<:Real}, y::AbstractVector{T}, w::Work
     return x
 end
 
+# Unit-stride pencils are handed to the kernels directly; strided ones are
+# copied to the worker's contiguous buffers first. The copy costs one pass over
+# the pencil but keeps the kernel's scattered reads within cache lines — for a
+# stride of a cache line or more the kernel is otherwise 1.2–1.3× slower. The
+# test is sufficient rather than exact (a 1×N array's dim-2 pencils are
+# contiguous but still take the copy): a wasted copy, never a wrong answer.
+_unit_stride(v::StridedArray) = stride(v, 1) == 1
+_unit_stride(v) = false
+
 # Apply `kernel!(y_pencil, x_pencil, worker, flen)` along dimension `R` of `x` and `y`.
 function _re_pencil_loop!(kernel!::F, y::AbstractArray{<:Any,N}, x::AbstractArray{<:Any,N}, p::FFTAPlan_re, ::Val{R}) where {F,N,R}
     n = p.flen
-    _foreach_pencil(x, Val(R), p.workers) do w, Ipre, Ipost
-        @views kernel!(y[Ipre, :, Ipost], x[Ipre, :, Ipost], w, n)
+    if R == 1 && _unit_stride(x) && _unit_stride(y)
+        _foreach_pencil(x, Val(R), p.workers) do w, Ipre, Ipost
+            @views kernel!(y[Ipre, :, Ipost], x[Ipre, :, Ipost], w, n)
+        end
+    else
+        _foreach_pencil(x, Val(R), p.workers) do w, Ipre, Ipost
+            xin, yout = _pencil_buffers(kernel!, w)   # per worker: no sharing between tasks
+            copyto!(xin, @view x[Ipre, :, Ipost])
+            kernel!(yout, xin, w, n)
+            copyto!(@view(y[Ipre, :, Ipost]), yout)
+        end
     end
     return y
 end
+# forward: real in, complex out; backward: complex in, real out
+_pencil_buffers(::typeof(_rfft_pencil!), w::Worker) = (w.rbuf, w.cbuf)
+_pencil_buffers(::typeof(_brfft_pencil!), w::Worker) = (w.cbuf, w.rbuf)
+# forward: real in, complex out; backward: complex in, real out
+_pencil_buffers(::typeof(_rfft_pencil!), p::FFTAPlan_re) = (p.rbuf, p.cbuf)
+_pencil_buffers(::typeof(_brfft_pencil!), p::FFTAPlan_re) = (p.cbuf, p.rbuf)
 
 # Dispatch on the transform dimension so that the loop above is type-stable.
 function _re_along_dim!(kernel!::F, y::AbstractArray{<:Any,N}, x::AbstractArray{<:Any,N}, p::FFTAPlan_re, d::Int) where {F,N}
@@ -587,7 +618,7 @@ function _re_along_dim!(kernel!::F, y::AbstractArray{<:Any,N}, x::AbstractArray{
     end
 end
 
-function _cx_along_dim!(A::AbstractArray{<:Any,N}, workers::Vector{Worker{T,M}}, k::Int, dir::Direction, d::Int) where {N,T,M}
+function _cx_along_dim!(A::AbstractArray{<:Any,N}, workers::Vector{<:Worker{T,M}}, k::Int, dir::Direction, d::Int) where {N,T,M}
     if @generated
         quote
             Base.Cartesian.@nif $N dim -> (d == dim) dim -> (fft_along_dim!(A, workers, k, dir, Val(dim)))
@@ -710,13 +741,13 @@ function AbstractFFTs.plan_inv(p::FFTAPlan_cx{T,N,R}) where {T,N,R}
     AbstractFFTs.ScaledPlan(q, _normalization(p))
 end
 
-function AbstractFFTs.plan_inv(p::FFTAPlan_re{T,N,R}) where {T,N,R}
+function AbstractFFTs.plan_inv(p::FFTAPlan_re{T,N,R,S}) where {T,N,R,S}
     dir = p.dir === FFT_FORWARD ? FFT_BACKWARD : FFT_FORWARD
     cutoff = p.callgraph[1].BLUESTEIN_CUTOFF
     n = p.flen
     nn = iseven(n) ? n >> 1 : n
     cg = (CallGraph{T}(nn, cutoff), ntuple(i -> CallGraph{T}(size(p, i + 1), cutoff), Val(N - 1))...)
-    q = FFTAPlan_re{T,N,R}(cg, p.region, dir, n, _workers(cg, Val(N), _num_threads(p), _re_buflen(n, dir)))
+    q = FFTAPlan_re{T,N,R}(cg, p.region, dir, n, _workers(cg, Val(N), _num_threads(p), _re_buflen(n, dir), n))
     AbstractFFTs.ScaledPlan(q, _normalization(p))
 end
 
