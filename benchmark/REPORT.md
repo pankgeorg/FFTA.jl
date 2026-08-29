@@ -19,6 +19,33 @@ Generated 2026-08-29 23:01 UTC by `benchmark/report.jl` from `results_suite.json
 | Time budget per measurement (s) | 0.5 |
 | Run date (UTC) | 2026-08-29T17:36:11.141 |
 
+*Prime class note:* the prime column covers 24 sizes; the five in the
+DFT/Bluestein crossover band (23, 29, 31, 37, 43) were added to the suite
+later and measured in a separate run of the same `main` tree with the same
+settings, so that this column and the after-optimisation report use the same
+size set.
+
+## After the optimisation PRs
+
+[`after-optimisations/aarch64/REPORT.md`](after-optimisations/aarch64/REPORT.md)
+is the same suite on the same machine against the fork's `integration/all`
+branch (all optimisation PRs merged); [`COMPARE.md`](after-optimisations/aarch64/COMPARE.md)
+gives the per-class baseline → after table (2.57× geometric-mean speedup
+over 510 matched cases, none slower by more than 5%).
+
+## Companion x86-64 run
+
+The same suite was run on an x86-64 machine (Intel Core Ultra 7 165H,
+AVX2 + FMA, no AVX-512, Julia 1.12.6, FFTW 3.3.11 provider `fftw`,
+`-t 8`, identical settings): see [`x86-64/REPORT.md`](x86-64/REPORT.md),
+its [`PROVENANCE.md`](x86-64/PROVENANCE.md) and the per-branch
+before/after results under `x86-64/branches/`. Headline: FFTA's gap to
+FFTW is 1.22× wider (geometric mean over the size classes) on AVX2 than
+on NEON, worst in single precision and on smooth sizes — the SIMD effect
+the analysis predicts — and the Bluestein calibration files
+(`x86-64/calib_*.md`) show that the DFT/Bluestein crossover and the cost
+of 3-smooth padding lengths are architecture dependent.
+
 ## Methodology
 
 * Both packages are loaded in one Julia process; FFTA plans are created via
