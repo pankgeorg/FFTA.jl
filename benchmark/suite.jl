@@ -121,7 +121,10 @@ function size_classes(maxlog2)
     for t in exp.(range(log(7), log(nmax), length = 16))
         push!(prime, nextprime(round(Int, t)))
     end
-    for n in (61, 71, 73, 79)   # straddle DEFAULT_BLUESTEIN_CUTOFF
+    # straddle the DFT/Bluestein crossover: the O(n²) leaf is used below the
+    # cutoff (73 originally, 29 since the twiddle-table work), so sample the
+    # band 23–46 as well as 61–79
+    for n in (23, 29, 31, 37, 43, 61, 71, 73, 79)
         push!(prime, n)
     end
     filter!(<=(nmax), prime); sort!(unique!(prime))
