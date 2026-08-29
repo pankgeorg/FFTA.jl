@@ -85,6 +85,11 @@ end
 # much on either.
 const DEFAULT_BLUESTEIN_CUTOFF = 29
 
+# Relative per-element cost of a 3-smooth transform length compared to a
+# power of two, above which `bluestein_pad_length` keeps the power of two.
+# See its docstring for the measurements behind the value.
+const BLUESTEIN_SMOOTH_FACTOR = 2.1
+
 # Get the node in the graph at index i
 Base.getindex(g::CallGraph{T}, i::Int) where {T} = g.nodes[i]
 
@@ -322,13 +327,15 @@ against a power of two (ComplexF64, planned execution), a length with
 factors of 3 costs 1.3–2.3× on aarch64 NEON (Neoverse-N1) but 2.0–3.1× on
 x86-64 AVX2 (Core Ultra 7 165H); with a threshold of 1.9 the 3-smooth pad
 was a 1.58× win at N = 8443 on aarch64 and a 1.19× loss on x86-64. The
-threshold is therefore set to 2.1, at which the chooser never loses on
-either machine (and rarely fires: it needs a 3-smooth length well under
-half the power of two). Below 2048 the fixed overhead of the composite
-step dominates and the power of two is always used. The constant should
-be revisited when the composite/radix-3 path gets faster.
+threshold (`factor`) is therefore set to 2.1, at which the chooser never
+loses on either machine — which, since the smallest admissible length is
+always more than half the power of two, means it currently never picks a
+3-smooth length: the mechanism is kept (and the constant should be
+lowered) for when the composite/radix-3 path becomes competitive with the
+radix-4 kernel. Below 2048 the fixed overhead of the composite step
+dominates and the power of two is always used.
 """
-function bluestein_pad_length(N::Int)
+function bluestein_pad_length(N::Int; factor::Real = BLUESTEIN_SMOOTH_FACTOR)
     m = 2N - 1
     p = nextpow(2, m)
     best = p
@@ -336,7 +343,7 @@ function bluestein_pad_length(N::Int)
     pow3 = 3
     while pow3 < p
         c = pow3 * nextpow(2, cld(m, pow3))   # smallest 2^a·3^b with this power of 3
-        cost = 2.1 * c * log2(c)
+        cost = factor * c * log2(c)
         if c >= max(m, 2048) && cost < best_cost
             best, best_cost = c, cost
         end

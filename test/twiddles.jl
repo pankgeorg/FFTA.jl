@@ -116,8 +116,10 @@ end
     @test FFTA.bluestein_pad_length(4099) == 16384
     @test FFTA.bluestein_pad_length(8443) == 32768
     @test FFTA.bluestein_pad_length(65537) == 262144
-    # a 3-smooth pad is taken when it is far enough below the power of two
-    @test FFTA.bluestein_pad_length(2200) == 4374     # 2·3^7 = 4374 vs 8192
+    # the mechanism, with a factor at which 3-smooth lengths are worth it
+    @test FFTA.bluestein_pad_length(2200; factor = 1.5) == 4374     # 2·3^7 = 4374 vs 8192
+    @test FFTA.bluestein_pad_length(8443; factor = 1.5) == 17496
+    @test FFTA.bluestein_pad_length(73; factor = 1.0) == 256          # below the 2048 floor
 end
 
 @testset "planned execution does not allocate, n=$n" for n in (5, 47, 64, 73, 101, 720, 1000, 1009, 4096, 65537)
