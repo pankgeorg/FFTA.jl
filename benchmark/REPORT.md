@@ -19,6 +19,14 @@ Generated 2026-08-29 18:14 UTC by `benchmark/report.jl` from `results_suite.json
 | Time budget per measurement (s) | 0.5 |
 | Run date (UTC) | 2026-08-29T17:36:11.141 |
 
+## After the optimisation PRs
+
+[`after-optimisations/aarch64/REPORT.md`](after-optimisations/aarch64/REPORT.md)
+is the same suite on the same machine against the fork's `integration/all`
+branch (all optimisation PRs merged); [`COMPARE.md`](after-optimisations/aarch64/COMPARE.md)
+gives the per-class baseline → after table (2.57× geometric-mean speedup
+over 510 matched cases, none slower by more than 5%).
+
 ## Companion x86-64 run
 
 The same suite was run on an x86-64 machine (Intel Core Ultra 7 165H,
