@@ -32,6 +32,9 @@ Options for `suite.jl`:
 `-t N` controls the thread count used for the FFTW-threading section (FFTA
 is single-threaded). `report.jl` accepts several JSON files and merges them.
 
+`report.jl` regenerates the whole `REPORT.md`; sections added by hand (cross
+references to other runs) have to be re-added after re-rendering.
+
 To compare two runs (e.g. before and after a change to FFTA):
 
 ```bash
