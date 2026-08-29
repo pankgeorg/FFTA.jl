@@ -21,7 +21,7 @@ end
 
     @testset "allocation regression" begin
         # plan creation allocates one twiddle table per node (and the Bluestein scratch)
-        @test (@test_allocations fft(x)) <= 80
+        @test (@test_allocations fft(x)) <= 120
     end
 end
 

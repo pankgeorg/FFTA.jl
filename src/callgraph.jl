@@ -35,20 +35,20 @@ transform in direction `dir` (see `fft_bluestein!`).
 
 # Fields
 - `N`: Length of the transform
-- `pad_len`: Power-of-two length ≥ 2N-1 of the padded convolution
+- `pad_len`: Length ≥ 2N-1 of the padded convolution (see `bluestein_pad_length`)
 - `chirp`: `b_n = exp(∓iπ n²/N)` for `n = 0..N-1`
 - `chirp_fft`: forward FFT of the zero-padded, periodised chirp, divided by `pad_len`
 - `a`, `tmp`: work arrays of length `pad_len`
-- `tw`: forward power-of-two twiddle tables for `pad_len` (see `pow2_twiddles`)
+- `graph`: forward `CallGraph` for the length-`pad_len` transforms
 """
-struct BluesteinScratch{T<:Complex}
+struct BluesteinScratch{T<:Complex,G}
     N::Int
     pad_len::Int
     chirp::Vector{T}
     chirp_fft::Vector{T}
     a::Vector{T}
     tmp::Vector{T}
-    tw::Vector{T}
+    graph::G
 end
 
 """
@@ -70,13 +70,15 @@ struct CallGraph{T<:Complex}
     nodes::Vector{CallGraphNode}
     workspace::Vector{Vector{T}}
     twiddles::Vector{Vector{T}}
-    bluestein::Vector{BluesteinScratch{T}}
+    bluestein::Vector{BluesteinScratch{T,CallGraph{T}}}
     blue_index::Vector{Int}
     dir::Direction
     BLUESTEIN_CUTOFF::Int
 end
 
-const DEFAULT_BLUESTEIN_CUTOFF = 73
+# Primes below this use the O(N²) DFT with a twiddle table; at and above it
+# Bluestein's algorithm is cheaper (crossover measured at ~45 for ComplexF64).
+const DEFAULT_BLUESTEIN_CUTOFF = 47
 
 # Get the node in the graph at index i
 Base.getindex(g::CallGraph{T}, i::Int) where {T} = g.nodes[i]
@@ -306,11 +308,37 @@ end
 
 """
 $(TYPEDSIGNATURES)
-Precompute the chirp, its transform, the work arrays and the twiddle tables
-used by `fft_bluestein!` for a length-`N` transform in direction `d`.
+Length of the padded convolution in Bluestein's algorithm for a length-`N`
+transform: the smallest power of two ≥ 2N-1, unless a 3-smooth length
+`2^a 3^b ≥ 2N-1` is enough smaller to be cheaper — a transform of a length
+with factors of 3 costs about 1.6× per `n log n` in FFTA compared to a
+power of two, so `m` is preferred over `p` when `1.6 m log m < p log p`.
+"""
+function bluestein_pad_length(N::Int)
+    m = 2N - 1
+    p = nextpow(2, m)
+    best = p
+    best_cost = p * log2(p)
+    pow3 = 3
+    while pow3 < p
+        c = pow3 * nextpow(2, cld(m, pow3))   # smallest 2^a·3^b with this power of 3
+        cost = 1.6 * c * log2(c)
+        if c >= m && cost < best_cost
+            best, best_cost = c, cost
+        end
+        pow3 *= 3
+    end
+    return best
+end
+
+"""
+$(TYPEDSIGNATURES)
+Precompute the chirp, its transform, the work arrays and the call graph of the
+padded transform used by `fft_bluestein!` for a length-`N` transform in
+direction `d`.
 """
 function BluesteinScratch{T}(N::Int, d::Direction) where {T<:Complex}
-    pad_len = nextpow(2, 2N - 1)
+    pad_len = bluestein_pad_length(N)
     R = real(T)
 
     # chirp b_n = exp(sgn · iπ n²/N); n² is tracked modulo 2N so that the
@@ -324,7 +352,8 @@ function BluesteinScratch{T}(N::Int, d::Direction) where {T<:Complex}
         p > N && (p -= 2N)
     end
 
-    tw = pow2_twiddles(T, pad_len, FFT_FORWARD)
+    # the padded length is 3-smooth, so its graph has no Bluestein node
+    graph = CallGraph{T}(pad_len, 2, FFT_FORWARD)
 
     # periodised, zero-padded chirp and its forward transform, scaled by
     # 1/pad_len so that the inverse transform in `fft_bluestein!` needs no
@@ -335,10 +364,10 @@ function BluesteinScratch{T}(N::Int, d::Direction) where {T<:Complex}
         a[pad_len - j] = chirp[2 + j]
     end
     chirp_fft = Vector{T}(undef, pad_len)
-    fft_pow2_radix4!(chirp_fft, a, pad_len, 1, 1, 1, 1, FFT_FORWARD, tw, 0)
+    fft!(chirp_fft, a, 1, 1, FFT_FORWARD, graph[1].type, graph, 1)
     chirp_fft ./= R(pad_len)
 
-    return BluesteinScratch{T}(N, pad_len, chirp, chirp_fft, a, Vector{T}(undef, pad_len), tw)
+    return BluesteinScratch{T,CallGraph{T}}(N, pad_len, chirp, chirp_fft, a, Vector{T}(undef, pad_len), graph)
 end
 
 """
@@ -351,7 +380,7 @@ function CallGraph{T}(N::Int, BLUESTEIN_CUTOFF::Int, dir::Direction=FFT_FORWARD)
     workspace = Vector{Vector{T}}()
     CallGraphNode!(nodes, N, workspace, BLUESTEIN_CUTOFF, 1, 1)
     twiddles = [node_twiddles(T, nodes, idx, dir) for idx in eachindex(nodes)]
-    bluestein = BluesteinScratch{T}[]
+    bluestein = BluesteinScratch{T,CallGraph{T}}[]
     blue_index = zeros(Int, length(nodes))
     for (idx, node) in enumerate(nodes)
         if node.type === BLUESTEIN

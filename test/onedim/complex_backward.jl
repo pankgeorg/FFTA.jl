@@ -20,7 +20,7 @@ end
     end
 
     @testset "allocation regression" begin
-        @test (@test_allocations bfft(y)) <= 80
+        @test (@test_allocations bfft(y)) <= 120
     end
 end
 

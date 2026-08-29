@@ -78,7 +78,7 @@ end
         @test bi !== nothing
         @test gb.blue_index[bi] == 1
         s = gb.bluestein[1]
-        @test s.N == 1009 && s.pad_len == 2048 && length(s.chirp) == 1009 && length(s.chirp_fft) == 2048
+        @test s.N == 1009 && s.pad_len == FFTA.bluestein_pad_length(1009) == 2048 && length(s.chirp) == 1009 && length(s.chirp_fft) == 2048
     end
     # the opposite direction is rejected
     g = FFTA.CallGraph{ComplexF64}(8, FFTA.DEFAULT_BLUESTEIN_CUTOFF, FFTA.FFT_FORWARD)
@@ -103,7 +103,19 @@ end
     @test yb ≈ fft(xb)
 end
 
-@testset "planned execution does not allocate, n=$n" for n in (5, 64, 73, 101, 720, 1000, 1009, 4096, 65537)
+@testset "bluestein_pad_length" begin
+    for N in (47, 73, 127, 1009, 4099, 65537, 120779)
+        m = FFTA.bluestein_pad_length(N)
+        @test m >= 2N - 1
+        f = FFTA.Primes.factor(Dict, m)
+        @test all(p -> p in (2, 3), keys(f))
+    end
+    @test FFTA.bluestein_pad_length(1009) == 2048
+    @test FFTA.bluestein_pad_length(4099) in (8748, 9216)   # 3-smooth, cheaper than 16384
+    @test FFTA.bluestein_pad_length(65537) < 262144
+end
+
+@testset "planned execution does not allocate, n=$n" for n in (5, 47, 64, 73, 101, 720, 1000, 1009, 4096, 65537)
     x = randn(ComplexF64, n)
     p = plan_fft(x)
     y = p * x

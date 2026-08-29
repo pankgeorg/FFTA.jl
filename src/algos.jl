@@ -326,8 +326,8 @@ $(TYPEDSIGNATURES)
 Bluestein's algorithm, still O(N * log(N)) for large primes,
 but with a big constant factor.
 Zero-pads two sequences derived from the DFT formula to a
-power of 2 length greater than `2N-1` and computes their convolution
-with a power 2 FFT. The chirp, its transform and the work arrays are
+3-smooth length ≥ `2N-1` (see `bluestein_pad_length`) and computes their
+convolution with FFTs of that length. The chirp, its transform and the work arrays are
 precomputed in `scratch` (see `BluesteinScratch`).
 
 # Arguments
@@ -350,7 +350,8 @@ function fft_bluestein!(
     start_in::Int,  stride_in::Int,
     scratch::BluesteinScratch{T}=BluesteinScratch{T}(N, d)
 ) where T<:Complex
-    (; pad_len, chirp, chirp_fft, a, tmp, tw) = scratch
+    (; pad_len, chirp, chirp_fft, a, tmp, graph) = scratch
+    gt = graph[1].type
 
     # a_n = x_n · conj(b_n), zero padded
     @inbounds for i in 1:N
@@ -363,11 +364,11 @@ function fft_bluestein!(
     # Circular convolution of `a` with the periodised chirp via the forward
     # transform only: conv = conj(fft(conj(fft(a) .* fft(b)))) / pad_len, with
     # the 1/pad_len already folded into `chirp_fft`.
-    fft_pow2_radix4!(tmp, a, pad_len, 1, 1, 1, 1, FFT_FORWARD, tw, 0)
+    fft!(tmp, a, 1, 1, FFT_FORWARD, gt, graph, 1)
     @inbounds for i in 1:pad_len
         tmp[i] = conj(tmp[i] * chirp_fft[i])
     end
-    fft_pow2_radix4!(a, tmp, pad_len, 1, 1, 1, 1, FFT_FORWARD, tw, 0)
+    fft!(a, tmp, 1, 1, FFT_FORWARD, gt, graph, 1)
 
     # X_k = conj(b_k) · conv_k
     @inbounds for i in 1:N
