@@ -446,3 +446,38 @@ FFTA and FFTW can coexist in one environment at all.
 5. Smooth-length Bluestein padding; retune the cutoff; Rader (§4.4, §4.5).
 6. Method-ambiguity fix with FFTW, `plan_fft!`, 3D `rfft` (§4.8).
 7. Vectorised codelet generator (§5.3) — larger, separate design discussion.
+
+## 9. Where things stand after the work list (measured)
+
+Items 1–6 of §8 have been implemented (twiddle tables and Bluestein data in
+the plan; real-plan `mul!`, zero-allocation and N-d real paths; 8–64-point
+straight-line base cases; plan-owned per-thread workers with threading
+across pencils; a re-calibrated Bluestein cutoff with a dormant 3-smooth
+pad chooser; inverse and in-place plans; the FFTW.jl ambiguity fix). With
+all of them merged, the same suite on the same aarch64 machine gives, over
+the 510 cases comparable with the baseline, a geometric-mean FFTA speedup of
+**2.57× with no case slower by more than 5%**; on an AVX2 x86-64 machine
+**3.24×** with three x86-specific regressions (wide `64×N` `rfft` along
+`dims=2`, 1.16–1.34×, alongside the removal of 16–66 MiB of allocation per
+call). FFTA/FFTW after (aarch64, single thread, FFTW `ESTIMATE`):
+
+| type | pow2 | smooth | prime | awkward | 2D | 3D | batched dim=1 | batched dim=2 |
+|:--|--:|--:|--:|--:|--:|--:|--:|--:|
+| ComplexF64 fft | 1.19× (0.8–1.7) | 2.79× (1.4–4.5) | 1.97× (1.1–3.9) | 2.29× (1.0–5.9) | 1.90× (1.0–4.1) | 2.96× (2.0–4.9) | 1.61× (1.1–2.3) | 1.42× (1.0–2.7) |
+| ComplexF32 fft | 1.68× (0.6–2.8) | 4.28× (2.0–8.7) | 2.37× (1.4–6.5) | 2.75× (1.3–6.7) | 2.48× (1.2–4.9) | 4.31× (3.1–5.9) | 2.43× (1.8–3.6) | 1.66× (1.2–4.4) |
+| Float64 rfft | 1.74× (0.8–3.5) | 3.49× (1.6–6.9) | 2.26× (1.0–4.5) | 2.43× (1.0–7.3) | 2.33× (1.1–7.7) | 3.55× (1.8–8.0) | 1.69× (1.3–3.0) | 1.51× (1.0–3.3) |
+| Float32 rfft | 2.30× (1.6–3.3) | 4.52× (2.1–8.2) | 2.13× (1.1–4.2) | 2.85× (1.4–6.7) | 2.92× (1.6–6.8) | 4.33× (2.8–7.6) | 2.40× (2.1–2.8) | 1.64× (1.0–3.1) |
+
+Against the ceiling in §6: every class landed inside the "after §4.1–4.7
+(no SIMD)" column or better, and the composite/prime classes went from
+5–10× to 2–3× as predicted. Two qualifications matter for anyone quoting
+these numbers. First, the ratios are against FFTW's default `ESTIMATE`
+plans; FFTA now matches or beats those for mid-size powers of two, but
+FFTW `MEASURE` plans are 1.6–2.4× faster than `ESTIMATE` there, so against
+tuned FFTW the state is 1.5–1.8× behind at 2^14–2^19 and 2.7–3.2× behind
+at n ≥ 2^20 (§5.4). Second, the structural items are untouched: `ComplexF32`
+is still no faster than `ComplexF64` in FFTA (§5.3), the non-radix-4 kernels
+are where x86-64 loses most (§5.3a), Rader is absent (§5.5), and threading
+within a single 1D transform does not exist (§5.6). Those are the remaining
+work list: radix-5/7 butterflies (first on x86-64), a vectorised codelet
+generator, a cache-blocked large-n path, Rader.
