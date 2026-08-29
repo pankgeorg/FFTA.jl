@@ -310,9 +310,12 @@ end
 $(TYPEDSIGNATURES)
 Length of the padded convolution in Bluestein's algorithm for a length-`N`
 transform: the smallest power of two ≥ 2N-1, unless a 3-smooth length
-`2^a 3^b ≥ 2N-1` is enough smaller to be cheaper — a transform of a length
-with factors of 3 costs about 1.6× per `n log n` in FFTA compared to a
-power of two, so `m` is preferred over `p` when `1.6 m log m < p log p`.
+`2^a 3^b ≥ 2N-1` is enough smaller to be cheaper. Measured on FFTA, a
+transform of a length with factors of 3 costs about 1.9× per `n log n`
+compared to a power of two (the composite step and the radix-3 kernel are
+slower than the radix-4 one), so `m` is preferred over `p` when
+`1.9 m log m < p log p`; below 2048 the fixed overhead of the composite
+step dominates and the power of two is always used.
 """
 function bluestein_pad_length(N::Int)
     m = 2N - 1
@@ -322,8 +325,8 @@ function bluestein_pad_length(N::Int)
     pow3 = 3
     while pow3 < p
         c = pow3 * nextpow(2, cld(m, pow3))   # smallest 2^a·3^b with this power of 3
-        cost = 1.6 * c * log2(c)
-        if c >= m && cost < best_cost
+        cost = 1.9 * c * log2(c)
+        if c >= max(m, 2048) && cost < best_cost
             best, best_cost = c, cost
         end
         pow3 *= 3
