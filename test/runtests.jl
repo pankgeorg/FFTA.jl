@@ -96,6 +96,9 @@ Random.seed!(1)
     @testset verbose = true "Inverse and in-place plans" begin
         include("inverse_inplace.jl")
     end
+    @testset verbose = true "Workers and threads" begin
+        include("threads.jl")
+    end
     @testset verbose = true "N-D" begin
         @testset verbose = true "Minimal tests" begin
             include("ndim/minimal_complex.jl")

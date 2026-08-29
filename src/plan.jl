@@ -7,19 +7,51 @@ const RegionTypes{N} = Union{Int,AbstractVector{Int},NTuple{N,Int}}
 # The plan types are mutable so that `AbstractFFTs.inv` can cache the inverse
 # plan in the initially undefined `pinv` field (see `plan_inv`), as FFTW.jl does.
 
+"""
+$(TYPEDEF)
+Per-thread state of a plan: call graphs (sharing the nodes of the plan's call
+graphs but with their own workspace) and pencil buffers. A plan owns one
+`Worker` per thread it may use (see the `num_threads` keyword of the `plan_*`
+functions); pencils of a multidimensional or batched transform are
+distributed over them.
+"""
+struct Worker{T,N}
+    callgraph::NTuple{N,CallGraph{T}}
+    obuf::Vector{T}   # transform output of one pencil before it is copied back
+    buf::Vector{T}    # real<->complex packing scratch, see `_re_buflen` (real plans only)
+end
+
+# A call graph that shares the (immutable) nodes but has its own workspace.
+_clone_workspace(g::CallGraph{T}) where {T} =
+    CallGraph{T}(g.nodes, [Vector{T}(undef, length(w)) for w in g.workspace], g.BLUESTEIN_CUTOFF)
+
+function _workers(cg::Tuple{CallGraph{T},Vararg{CallGraph{T}}}, ::Val{N}, num_threads::Int, buflen::Int) where {T,N}
+    num_threads >= 1 || throw(ArgumentError("num_threads must be at least 1"))
+    obuflen = maximum(g -> first(g.nodes).sz, cg)
+    workers = [Worker{T,N}(cg, Vector{T}(undef, obuflen), Vector{T}(undef, buflen))]
+    for _ in 2:num_threads
+        push!(workers, Worker{T,N}(map(_clone_workspace, cg), Vector{T}(undef, obuflen), Vector{T}(undef, buflen)))
+    end
+    return workers
+end
+
+# Transforms with fewer elements than this are not split over threads.
+const THREAD_THRESHOLD = 1 << 15
+
 mutable struct FFTAPlan_cx{T,N,R<:RegionTypes{N}} <: FFTAPlan{T,N}
     const callgraph::NTuple{N,CallGraph{T}}
     const region::R
     const dir::Direction
+    const workers::Vector{Worker{T,N}}
     pinv::AbstractFFTs.ScaledPlan
-    FFTAPlan_cx{T,N,R}(cg::NTuple{N,CallGraph{T}}, r::R, dir::Direction) where {T,N,R<:RegionTypes{N}} =
-        new{T,N,R}(cg, r, dir)
+    FFTAPlan_cx{T,N,R}(cg::NTuple{N,CallGraph{T}}, r::R, dir::Direction, workers::Vector{Worker{T,N}}) where {T,N,R<:RegionTypes{N}} =
+        new{T,N,R}(cg, r, dir, workers)
 end
 function FFTAPlan_cx{T,N}(
     cg::NTuple{N,CallGraph{T}}, r::R,
-    dir::Direction
+    dir::Direction; num_threads::Int=Threads.nthreads()
 ) where {T,N,R<:RegionTypes{N}}
-    FFTAPlan_cx{T,N,R}(cg, r, dir)
+    FFTAPlan_cx{T,N,R}(cg, r, dir, _workers(cg, Val(N), num_threads, 0))
 end
 
 mutable struct FFTAPlan_re{T,N,R<:RegionTypes{N}} <: FFTAPlan{T,N}
@@ -27,18 +59,19 @@ mutable struct FFTAPlan_re{T,N,R<:RegionTypes{N}} <: FFTAPlan{T,N}
     const region::R
     const dir::Direction
     const flen::Int
-    const buf::Vector{T}   # scratch for the real<->complex packing, see `_re_buflen`
+    const workers::Vector{Worker{T,N}}
     pinv::AbstractFFTs.ScaledPlan
-    FFTAPlan_re{T,N,R}(cg::NTuple{N,CallGraph{T}}, r::R, dir::Direction, flen::Int, buf::Vector{T}) where {T,N,R<:RegionTypes{N}} =
-        new{T,N,R}(cg, r, dir, flen, buf)
+    FFTAPlan_re{T,N,R}(cg::NTuple{N,CallGraph{T}}, r::R, dir::Direction, flen::Int, workers::Vector{Worker{T,N}}) where {T,N,R<:RegionTypes{N}} =
+        new{T,N,R}(cg, r, dir, flen, workers)
 end
 function FFTAPlan_re{T,N}(
     cg::NTuple{N,CallGraph{T}}, r::R,
-    dir::Direction, flen::Int
+    dir::Direction, flen::Int; num_threads::Int=Threads.nthreads()
 ) where {T,N,R<:RegionTypes{N}}
-    buf = Vector{T}(undef, _re_buflen(flen, dir))
-    FFTAPlan_re{T,N,R}(cg, r, dir, flen, buf)
+    FFTAPlan_re{T,N,R}(cg, r, dir, flen, _workers(cg, Val(N), num_threads, _re_buflen(flen, dir)))
 end
+
+_num_threads(p::Union{FFTAPlan_cx,FFTAPlan_re}) = length(p.workers)
 
 # Scratch length needed by the real-transform pencil kernels for a plan of
 # real length `n` (see `_rfft_pencil!` / `_brfft_pencil!`).
@@ -93,23 +126,23 @@ function _plan_fft(
     x::AbstractArray{T,N},
     region::RegionTypes,
     dir::Direction;
-    BLUESTEIN_CUTOFF=DEFAULT_BLUESTEIN_CUTOFF, _kwargs...
+    BLUESTEIN_CUTOFF=DEFAULT_BLUESTEIN_CUTOFF, num_threads::Int=Threads.nthreads(), _kwargs...
 ) where {T<:Complex,N}
     M = length(region)
     if M == 1
         R1 = Int(region[1])
         g = CallGraph{T}(size(x, R1), BLUESTEIN_CUTOFF)
-        return FFTAPlan_cx{T,1}((g,), R1, dir)
+        return FFTAPlan_cx{T,1}((g,), R1, dir; num_threads)
     elseif M == 2
         R2 = _sort(region)
         g1 = CallGraph{T}(size(x, R2[1]), BLUESTEIN_CUTOFF)
         g2 = CallGraph{T}(size(x, R2[2]), BLUESTEIN_CUTOFF)
-        return FFTAPlan_cx{T,2}((g1, g2), R2, dir)
+        return FFTAPlan_cx{T,2}((g1, g2), R2, dir; num_threads)
     else
         RM = _sort(region)
         return FFTAPlan_cx{T,M}(
             ntuple(i -> CallGraph{T}(size(x, RM[i]), BLUESTEIN_CUTOFF), Val(M)),
-            RM, dir
+            RM, dir; num_threads
         )
     end
 end
@@ -132,7 +165,7 @@ _region(r) = collect(Int, r)
 function _plan_rfft(
     x::AbstractArray{T,N},
     region::RegionTypes;
-    BLUESTEIN_CUTOFF=DEFAULT_BLUESTEIN_CUTOFF, _kwargs...
+    BLUESTEIN_CUTOFF=DEFAULT_BLUESTEIN_CUTOFF, num_threads::Int=Threads.nthreads(), _kwargs...
 ) where {T<:Real,N}
     M = length(region)
     if M == 1
@@ -143,14 +176,14 @@ function _plan_rfft(
         # problems, we just solve the problem as a single complex
         nn = iseven(n) ? n >> 1 : n
         g = CallGraph{Complex{T}}(nn, BLUESTEIN_CUTOFF)
-        return FFTAPlan_re{Complex{T},1}((g,), R1, FFT_FORWARD, n)
+        return FFTAPlan_re{Complex{T},1}((g,), R1, FFT_FORWARD, n; num_threads)
     elseif M == 2
         R2 = _sort(region)
         n = size(x, R2[1])
         nn = iseven(n) ? n >> 1 : n
         g1 = CallGraph{Complex{T}}(nn, BLUESTEIN_CUTOFF)
         g2 = CallGraph{Complex{T}}(size(x, R2[2]), BLUESTEIN_CUTOFF)
-        return FFTAPlan_re{Complex{T},2}((g1, g2), R2, FFT_FORWARD, n)
+        return FFTAPlan_re{Complex{T},2}((g1, g2), R2, FFT_FORWARD, n; num_threads)
     else
         throw(ArgumentError("only supports 1D and 2D FFTs"))
     end
@@ -160,7 +193,7 @@ function _plan_brfft(
     x::AbstractArray{T,N},
     len::Int,
     region::RegionTypes;
-    BLUESTEIN_CUTOFF=DEFAULT_BLUESTEIN_CUTOFF, _kwargs...
+    BLUESTEIN_CUTOFF=DEFAULT_BLUESTEIN_CUTOFF, num_threads::Int=Threads.nthreads(), _kwargs...
 ) where {T,N}
     M = length(region)
     if M == 1
@@ -170,13 +203,13 @@ function _plan_brfft(
         R1 = Int(region[1])
         nn = iseven(len) ? len >> 1 : len
         g = CallGraph{T}(nn, BLUESTEIN_CUTOFF)
-        return FFTAPlan_re{T,1}((g,), R1, FFT_BACKWARD, len)
+        return FFTAPlan_re{T,1}((g,), R1, FFT_BACKWARD, len; num_threads)
     elseif M == 2
         R2 = _sort(region)
         nn = iseven(len) ? len >> 1 : len
         g1 = CallGraph{T}(nn, BLUESTEIN_CUTOFF)
         g2 = CallGraph{T}(size(x, R2[2]), BLUESTEIN_CUTOFF)
-        return FFTAPlan_re{T,2}((g1, g2), R2, FFT_BACKWARD, len)
+        return FFTAPlan_re{T,2}((g1, g2), R2, FFT_BACKWARD, len; num_threads)
     else
         throw(ArgumentError("only supports 1D and 2D FFTs"))
     end
@@ -224,18 +257,52 @@ function LinearAlgebra.mul!(y::AbstractArray{U,N}, p::FFTAPlan_cx{T,1}, x::Abstr
     return y
 end
 
+"""
+$(TYPEDSIGNATURES)
+Call `f(worker, Ipre, Ipost)` for every pencil `A[Ipre, :, Ipost]` along
+dimension `dim` of `A`. When the plan has several workers and
+the transform is large enough (`THREAD_THRESHOLD` elements), the pencils are
+split into one contiguous chunk per worker and the chunks run as parallel
+tasks, each using its own worker (so its own call-graph workspace and
+buffers). Results do not depend on the number of threads.
+"""
+function _foreach_pencil(f::F, A::AbstractArray{<:Any,N}, ::Val{dim}, workers::Vector{W}) where {F,N,dim,W}
+    Rpre  = CartesianIndices(ntuple(Base.Fix1(size, A), Val(dim - 1)))
+    Rpost = CartesianIndices(ntuple(i -> size(A, dim + i), Val(N - dim)))
+    npre = length(Rpre)
+    total = npre * length(Rpost)
+    nt = min(length(workers), total ÷ 2)
+    if nt > 1 && total * size(A, dim) >= THREAD_THRESHOLD
+        Base.@sync for c in 1:nt
+            lo = (c - 1) * total ÷ nt + 1
+            hi = c * total ÷ nt
+            # (the task's worker gets its own name: a variable shared with the
+            # serial branch below would be captured by every task)
+            wc = workers[c]
+            Threads.@spawn for k in lo:hi
+                ipost, ipre = divrem(k - 1, npre)
+                f(wc, Rpre[ipre + 1], Rpost[ipost + 1])
+            end
+        end
+    else
+        w1 = workers[1]
+        for Ipost in Rpost, Ipre in Rpre
+            f(w1, Ipre, Ipost)
+        end
+    end
+    return nothing
+end
+
 function _mul_loop!(
     y::AbstractArray{U,N},
     x::AbstractArray{T,N},
     p::FFTAPlan_cx{T,1},
     ::Val{R}
 ) where {T,U,N,R}
-    Rpre  = CartesianIndices(ntuple(Base.Fix1(size, x),  Val(R - 1)))
-    Rpost = CartesianIndices(ntuple(i -> size(x, R + i), Val(N - R)))
-    cg = p.callgraph[1]
-    t = cg[1].type
-    for Ipost in Rpost, Ipre in Rpre
-        @views fft_kernel!(y[Ipre,:,Ipost], x[Ipre,:,Ipost], 1, 1, p.dir, t, cg, 1)
+    dir = p.dir
+    _foreach_pencil(x, Val(R), p.workers) do w, Ipre, Ipost
+        cg = w.callgraph[1]
+        @views fft_kernel!(y[Ipre,:,Ipost], x[Ipre,:,Ipost], 1, 1, dir, cg[1].type, cg, 1)
     end
 end
 
@@ -254,35 +321,18 @@ function LinearAlgebra.mul!(
         throw(DimensionMismatch("Plan region is outside array dimensions."))
     end
 
-    sz = size(X)
-    max_sz = maximum(sz)
-    obuf = Vector{T}(undef, max_sz)
-    ibuf = Vector{T}(undef, max_sz)
-    sizehint!(obuf, max_sz) # not guaranteed but hopefully prevents allocations
-    sizehint!(ibuf, max_sz)
     dir = p.dir
+    workers = p.workers
 
     copyto!(out, X) # operate in-place on output array
 
     if @generated
         quote
-            Base.Cartesian.@nexprs $N dim -> begin
-                n = size(out, dim)
-                resize!(obuf, n)
-                resize!(ibuf, n)
-                cg = p.callgraph[dim]
-
-                fft_along_dim!(out, ibuf, obuf, cg, dir, Val(dim))
-            end
+            Base.Cartesian.@nexprs $N dim -> fft_along_dim!(out, workers, dim, dir, Val(dim))
         end
     else
         for dim in 1:N
-            n = size(out, dim)
-            resize!(obuf, n)
-            resize!(ibuf, n)
-            cg = p.callgraph[dim]
-
-            fft_along_dim!(out, ibuf, obuf, cg, dir, Val(dim))
+            fft_along_dim!(out, workers, dim, dir, Val(dim))
         end
     end
 
@@ -304,78 +354,58 @@ function LinearAlgebra.mul!(
         throw(DimensionMismatch("Plan region is outside array dimensions."))
     end
 
-    max_sz = maximum(Base.Fix1(size, out), p.region)
-    obuf = Vector{T}(undef, max_sz)
-    ibuf = Vector{T}(undef, max_sz)
-    sizehint!(obuf, max_sz) # not guaranteed but hopefully prevents allocations
-    sizehint!(ibuf, max_sz)
-
     copyto!(out, X) # operate in-place on output array
 
-    _execute_mdfft!(out, ibuf, obuf, p.dir, p.region, p.callgraph)
+    _execute_mdfft!(out, p.workers, p.dir, p.region)
 
     return out
 end
 
 @noinline function _execute_mdfft!(
     out::AbstractArray{U,N},
-    ibuf::Vector{T}, obuf::Vector{T},
+    workers::Vector{Worker{T,M}},
     dir::Direction,
     @nospecialize(region::RegionTypes),
-    @nospecialize(callgraphs::NTuple)
-) where {T,U,N}
-
-    M = length(region)
+) where {T,U,N,M}
     if @generated
         quote
             k = 1
             # region is assumed to be pre-sorted during planning
             Base.Cartesian.@nexprs $N dim -> begin
                 if region[k] == dim
-                    n = size(out, dim)
-                    resize!(obuf, n)
-                    resize!(ibuf, n)
-                    cg = callgraphs[k]
-
-                    fft_along_dim!(out, ibuf, obuf, cg, dir, Val(dim))
-
+                    fft_along_dim!(out, workers, k, dir, Val(dim))
                     k = min(k + 1, M)
                 end
             end
             return nothing
         end
     else
-        for dim in 1:M
-            pdim = region[dim]
-            n = size(out, pdim)
-            resize!(obuf, n)
-            resize!(ibuf, n)
-            cg = callgraphs[dim]
-
-            fft_along_dim!(out, ibuf, obuf, cg, dir, Val(pdim))
+        for k in 1:M
+            fft_along_dim!(out, workers, k, dir, Val(Int(region[k])))
         end
     end
 end
 
+"""
+$(TYPEDSIGNATURES)
+Transform every pencil of `A` along dimension `dim` in place, using the `k`-th
+call graph of the workers. The kernels read the (strided) pencil directly and
+write the worker's output buffer, which is then copied back.
+"""
 function fft_along_dim!(
     A::AbstractArray{U,N},
-    ibuf::Vector{T}, obuf::Vector{T},
-    cg::CallGraph{T}, d::Direction,
+    workers::Vector{Worker{T,M}},
+    k::Int, d::Direction,
     ::Val{dim}
-) where {T <: Complex{<:AbstractFloat}, U, N, dim}
-
-    Rpre  = CartesianIndices(ntuple(Base.Fix1(size, A),    Val(dim - 1)))
-    Rpost = CartesianIndices(ntuple(i -> size(A, dim + i), Val(N - dim)))
-    t = cg[1].type
-    cols = eachindex(axes(A, dim), ibuf, obuf)
-
-    for Ipost in Rpost, Ipre in Rpre
-        for j in cols
-            ibuf[j] = A[Ipre, j, Ipost]
-        end
-        fft_kernel!(obuf, ibuf, 1, 1, d, t, cg, 1)
-        for j in cols
-            A[Ipre, j, Ipost] = obuf[j]
+) where {T <: Complex{<:AbstractFloat}, U, N, M, dim}
+    n = size(A, dim)
+    _foreach_pencil(A, Val(dim), workers) do w, Ipre, Ipost
+        cg = w.callgraph[k]
+        obuf = w.obuf
+        pencil = @view A[Ipre, :, Ipost]
+        fft_kernel!(obuf, pencil, 1, 1, d, cg[1].type, cg, 1)
+        @inbounds for j in 1:n
+            pencil[j] = obuf[j]
         end
     end
 end
@@ -444,11 +474,10 @@ end
 
 # Forward real-to-complex transform of one pencil: `x` real of length `n`,
 # `y` complex of length `n ÷ 2 + 1`.
-function _rfft_pencil!(y::AbstractVector{T}, x::AbstractVector{<:Real}, p::FFTAPlan_re{T}) where {T<:Complex}
-    n = p.flen
+function _rfft_pencil!(y::AbstractVector{T}, x::AbstractVector{<:Real}, w::Worker{T}, n::Int) where {T<:Complex}
     R = real(T)
-    cg = p.callgraph[1]
-    buf = p.buf
+    cg = w.callgraph[1]
+    buf = w.buf
     if iseven(n)
         # Solve the rfft problem by splitting the input into even and odd parts
         # and solving them simultaneously as a single (complex) fft of half
@@ -495,11 +524,10 @@ end
 
 # Backward complex-to-real transform of one pencil: `y` complex of length
 # `n ÷ 2 + 1`, `x` real of length `n`.
-function _brfft_pencil!(x::AbstractVector{<:Real}, y::AbstractVector{T}, p::FFTAPlan_re{T}) where {T<:Complex}
-    n = p.flen
+function _brfft_pencil!(x::AbstractVector{<:Real}, y::AbstractVector{T}, w::Worker{T}, n::Int) where {T<:Complex}
     R = real(T)
-    cg = p.callgraph[1]
-    buf = p.buf
+    cg = w.callgraph[1]
+    buf = w.buf
     if iseven(n)
         # Inverse of the even-length trick in `_rfft_pencil!`.
         m = n >> 1
@@ -541,12 +569,11 @@ function _brfft_pencil!(x::AbstractVector{<:Real}, y::AbstractVector{T}, p::FFTA
     return x
 end
 
-# Apply `kernel!(y_pencil, x_pencil, p)` along dimension `R` of `x` and `y`.
+# Apply `kernel!(y_pencil, x_pencil, worker, flen)` along dimension `R` of `x` and `y`.
 function _re_pencil_loop!(kernel!::F, y::AbstractArray{<:Any,N}, x::AbstractArray{<:Any,N}, p::FFTAPlan_re, ::Val{R}) where {F,N,R}
-    Rpre  = CartesianIndices(ntuple(Base.Fix1(size, x),  Val(R - 1)))
-    Rpost = CartesianIndices(ntuple(i -> size(x, R + i), Val(N - R)))
-    for Ipost in Rpost, Ipre in Rpre
-        @views kernel!(y[Ipre, :, Ipost], x[Ipre, :, Ipost], p)
+    n = p.flen
+    _foreach_pencil(x, Val(R), p.workers) do w, Ipre, Ipost
+        @views kernel!(y[Ipre, :, Ipost], x[Ipre, :, Ipost], w, n)
     end
     return y
 end
@@ -562,16 +589,13 @@ function _re_along_dim!(kernel!::F, y::AbstractArray{<:Any,N}, x::AbstractArray{
     end
 end
 
-function _cx_along_dim!(A::AbstractArray{<:Any,N}, cg::CallGraph{T}, dir::Direction, d::Int) where {N,T}
-    n = size(A, d)
-    ibuf = Vector{T}(undef, n)
-    obuf = Vector{T}(undef, n)
+function _cx_along_dim!(A::AbstractArray{<:Any,N}, workers::Vector{Worker{T,M}}, k::Int, dir::Direction, d::Int) where {N,T,M}
     if @generated
         quote
-            Base.Cartesian.@nif $N dim -> (d == dim) dim -> (fft_along_dim!(A, ibuf, obuf, cg, dir, Val(dim)))
+            Base.Cartesian.@nif $N dim -> (d == dim) dim -> (fft_along_dim!(A, workers, k, dir, Val(dim)))
         end
     else
-        fft_along_dim!(A, ibuf, obuf, cg, dir, Val(d))
+        fft_along_dim!(A, workers, k, dir, Val(d))
     end
 end
 
@@ -586,7 +610,7 @@ function LinearAlgebra.mul!(y::AbstractArray{T,N}, p::FFTAPlan_re{T,1}, x::Abstr
     d1 = only(p.region)
     _check_re_dims(y, p, x, d1, true)
     if N == 1
-        _rfft_pencil!(y, x, p)
+        _rfft_pencil!(y, x, p.workers[1], p.flen)
     else
         _re_along_dim!(_rfft_pencil!, y, x, p, d1)
     end
@@ -602,7 +626,7 @@ function LinearAlgebra.mul!(y::AbstractArray{<:Real,N}, p::FFTAPlan_re{T,1}, x::
     d1 = only(p.region)
     _check_re_dims(y, p, x, d1, false)
     if N == 1
-        _brfft_pencil!(y, x, p)
+        _brfft_pencil!(y, x, p.workers[1], p.flen)
     else
         _re_along_dim!(_brfft_pencil!, y, x, p, d1)
     end
@@ -624,7 +648,7 @@ function LinearAlgebra.mul!(y::AbstractArray{T,N}, p::FFTAPlan_re{T,2}, x::Abstr
         throw(DimensionMismatch("real 2D plan has size $(size(p)). Transform dimensions of input array are $((size(x, d1), size(x, d2))) but should be $(size(p))"))
     end
     _re_along_dim!(_rfft_pencil!, y, x, p, d1)
-    _cx_along_dim!(y, p.callgraph[2], FFT_FORWARD, d2)
+    _cx_along_dim!(y, p.workers, 2, FFT_FORWARD, d2)
     return y
 end
 
@@ -640,7 +664,7 @@ function LinearAlgebra.mul!(y::AbstractArray{<:Real,N}, p::FFTAPlan_re{T,2}, x::
         throw(DimensionMismatch("real 2D plan has size $(size(p)). Transform dimensions of input array are $((size(x, d1), size(x, d2))) but should be $((size(p, 1) ÷ 2 + 1, size(p, 2)))"))
     end
     tmp = copy(x)   # the complex pass must not modify the input
-    _cx_along_dim!(tmp, p.callgraph[2], FFT_BACKWARD, d2)
+    _cx_along_dim!(tmp, p.workers, 2, FFT_BACKWARD, d2)
     _re_along_dim!(_brfft_pencil!, y, tmp, p, d1)
     return y
 end
@@ -673,7 +697,7 @@ function AbstractFFTs.plan_inv(p::FFTAPlan_cx{T,N,R}) where {T,N,R}
     dir = p.dir === FFT_FORWARD ? FFT_BACKWARD : FFT_FORWARD
     cutoff = p.callgraph[1].BLUESTEIN_CUTOFF
     cg = ntuple(i -> CallGraph{T}(size(p, i), cutoff), Val(N))
-    q = FFTAPlan_cx{T,N,R}(cg, p.region, dir)
+    q = FFTAPlan_cx{T,N,R}(cg, p.region, dir, _workers(cg, Val(N), _num_threads(p), 0))
     AbstractFFTs.ScaledPlan(q, _normalization(p))
 end
 
@@ -683,7 +707,7 @@ function AbstractFFTs.plan_inv(p::FFTAPlan_re{T,N,R}) where {T,N,R}
     n = p.flen
     nn = iseven(n) ? n >> 1 : n
     cg = (CallGraph{T}(nn, cutoff), ntuple(i -> CallGraph{T}(size(p, i + 1), cutoff), Val(N - 1))...)
-    q = FFTAPlan_re{T,N,R}(cg, p.region, dir, n, Vector{T}(undef, _re_buflen(n, dir)))
+    q = FFTAPlan_re{T,N,R}(cg, p.region, dir, n, _workers(cg, Val(N), _num_threads(p), _re_buflen(n, dir)))
     AbstractFFTs.ScaledPlan(q, _normalization(p))
 end
 
