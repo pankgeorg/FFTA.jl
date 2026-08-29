@@ -13,6 +13,7 @@ Usage (from the `benchmark/` directory):
 
     julia --project=. -t 8 suite.jl [--quick] [--out results_suite.json]
                                     [--only 1d,nd,batched,threads] [--kinds fft,rfft]
+                                    [--sizes 23,29,31]
                                     [--maxlog2 22] [--seconds 0.5]
 
 Then `julia --project=. report.jl results_suite.json` renders REPORT.md.
@@ -44,6 +45,10 @@ const QUICK    = "--quick" in ARGS
 const OUTFILE  = getopt("--out", joinpath(@__DIR__, "results_suite.json"))
 const ONLY     = split(getopt("--only", "1d,nd,batched,threads"), ",")
 const KINDS    = Symbol.(split(getopt("--kinds", "fft,rfft"), ","))
+# restrict the 1D sweep to these sizes (comma separated), e.g. to add rows to an existing run
+const SIZES    = let v = getopt("--sizes", "")
+    isempty(v) ? Int[] : parse.(Int, split(v, ","))
+end
 const MAXLOG2  = parse(Int, getopt("--maxlog2", QUICK ? "16" : "22"))
 const SECONDS  = parse(Float64, getopt("--seconds", QUICK ? "0.2" : "0.5"))
 const NTHREADS = Threads.nthreads()
@@ -298,6 +303,7 @@ end
 if "1d" in ONLY
     println("\n== 1D sweep")
     for cls in (:pow2, :smooth, :prime, :awkward), n in CLASSES[cls]
+        isempty(SIZES) || n in SIZES || continue
         for T in (Float64, Float32)
             bench_case!(:fft,  T, (n,), 1; shape = "1d")
             bench_case!(:rfft, T, (n,), 1; shape = "1d")
@@ -306,6 +312,7 @@ if "1d" in ONLY
     # FFTW with MEASURE planning, ComplexF64 pow2 only (what a tuned consumer would see)
     println("\n== 1D pow2 ComplexF64 with FFTW.MEASURE")
     for n in CLASSES.pow2
+        isempty(SIZES) || n in SIZES || continue
         bench_case!(:fft, Float64, (n,), 1; shape = "1d", measure = true)
     end
 end

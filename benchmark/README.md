@@ -26,6 +26,7 @@ Options for `suite.jl`:
 | `--seconds S` | time budget per measurement (default 0.5) |
 | `--only 1d,nd,batched,threads` | run a subset of the sections |
 | `--kinds fft,rfft` | run only complex (`fft`) or only real (`rfft`) cases |
+| `--sizes 23,29,31` | restrict the 1D sweep to these sizes (to add rows to an existing run) |
 | `--out FILE` | output JSON (default `results_suite.json`) |
 
 `-t N` controls the thread count used for the FFTW-threading section (FFTA
