@@ -194,7 +194,13 @@ a full complex transform (2× the work); (iii) along `dims` of a matrix the
 `mapslices` path allocates per column and is 10× slower than FFTW, versus
 3–6× for the complex `dims` path. **Fix:** `mul!` for real plans, a
 strided/batched real path that reuses the complex `fft_along_dim!` loop,
-and the odd-length / 2D cases via the same half-length trick.
+and the odd-length / 2D cases via the same half-length trick. One thing the
+`mapslices` path did right, discovered only after replacing it: its copy of
+each pencil into a contiguous vector was an unlabelled copy-in
+optimisation for strided pencils (a `dims=2` pencil of a 64-row matrix
+strides a cache line per element), worth 1.2–1.3× on x86-64; the
+replacement keeps a copy-in for non-unit-stride pencils, from plan-owned
+buffers.
 
 ### 4.7 Multidimensional execution
 
@@ -467,6 +473,16 @@ call). FFTA/FFTW after (aarch64, single thread, FFTW `ESTIMATE`):
 | ComplexF32 fft | 1.68× (0.6–2.8) | 4.28× (2.0–8.7) | 2.37× (1.4–6.5) | 2.75× (1.3–6.7) | 2.48× (1.2–4.9) | 4.31× (3.1–5.9) | 2.43× (1.8–3.6) | 1.66× (1.2–4.4) |
 | Float64 rfft | 1.74× (0.8–3.5) | 3.49× (1.6–6.9) | 2.26× (1.0–4.5) | 2.43× (1.0–7.3) | 2.33× (1.1–7.7) | 3.55× (1.8–8.0) | 1.69× (1.3–3.0) | 1.51× (1.0–3.3) |
 | Float32 rfft | 2.30× (1.6–3.3) | 4.52× (2.1–8.2) | 2.13× (1.1–4.2) | 2.85× (1.4–6.7) | 2.92× (1.6–6.8) | 4.33× (2.8–7.6) | 2.40× (2.1–2.8) | 1.64× (1.0–3.1) |
+
+*Measurement notes.* The aarch64 numbers were taken on a shared host and
+the x86-64 ones on a laptop part under WSL2; on both, deltas below ~1.3×
+between two suite runs an hour apart are not evidence of anything — four
+apparent regressions in this work turned out to be run-to-run drift, and
+the one real one (§4.6's strided real pencils, found by the x86-64 run and
+fixed in the plan) was confirmed only by measuring all candidate branches
+back-to-back in one session. Every per-PR claim above rests on such a
+same-session comparison or on a matched-cases geometric mean over hundreds
+of sizes, never on a single cross-run cell.
 
 Against the ceiling in §6: every class landed inside the "after §4.1–4.7
 (no SIMD)" column or better, and the composite/prime classes went from
