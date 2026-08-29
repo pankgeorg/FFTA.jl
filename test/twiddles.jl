@@ -83,7 +83,7 @@ end
     # the opposite direction is rejected
     g = FFTA.CallGraph{ComplexF64}(8, FFTA.DEFAULT_BLUESTEIN_CUTOFF, FFTA.FFT_FORWARD)
     y = zeros(ComplexF64, 8)
-    @test_throws ArgumentError FFTA.fft!(y, ones(ComplexF64, 8), 1, 1, FFTA.FFT_BACKWARD, g[1].type, g, 1)
+    @test_throws ArgumentError FFTA.fft_kernel!(y, ones(ComplexF64, 8), 1, 1, FFTA.FFT_BACKWARD, g[1].type, g, 1)
 end
 
 @testset "kernels with tables computed on the fly" begin

@@ -370,11 +370,11 @@ function fft_bluestein!(
     # Circular convolution of `a` with the periodised chirp via the forward
     # transform only: conv = conj(fft(conj(fft(a) .* fft(b)))) / pad_len, with
     # the 1/pad_len already folded into `chirp_fft`.
-    fft!(tmp, a, 1, 1, FFT_FORWARD, gt, graph, 1)
+    fft_kernel!(tmp, a, 1, 1, FFT_FORWARD, gt, graph, 1)
     @inbounds for i in 1:pad_len
         tmp[i] = conj(tmp[i] * chirp_fft[i])
     end
-    fft!(a, tmp, 1, 1, FFT_FORWARD, gt, graph, 1)
+    fft_kernel!(a, tmp, 1, 1, FFT_FORWARD, gt, graph, 1)
 
     # X_k = conj(b_k) · conv_k
     @inbounds for i in 1:N

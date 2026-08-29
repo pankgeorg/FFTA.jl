@@ -26,8 +26,8 @@ end
 _clone_workspace(g::CallGraph{T}) where {T} =
     CallGraph{T}(g.nodes, [Vector{T}(undef, length(w)) for w in g.workspace], g.twiddles,
                  map(_clone_workspace, g.bluestein), g.blue_index, g.dir, g.BLUESTEIN_CUTOFF)
-_clone_workspace(s::BluesteinScratch{T}) where {T} =
-    BluesteinScratch{T}(s.N, s.pad_len, s.chirp, s.chirp_fft, Vector{T}(undef, s.pad_len), Vector{T}(undef, s.pad_len), s.tw)
+_clone_workspace(s::BluesteinScratch{T,G}) where {T,G} =
+    BluesteinScratch{T,G}(s.N, s.pad_len, s.chirp, s.chirp_fft, Vector{T}(undef, s.pad_len), Vector{T}(undef, s.pad_len), _clone_workspace(s.graph))
 
 function _workers(cg::Tuple{CallGraph{T},Vararg{CallGraph{T}}}, ::Val{N}, num_threads::Int, buflen::Int) where {T,N}
     num_threads >= 1 || throw(ArgumentError("num_threads must be at least 1"))

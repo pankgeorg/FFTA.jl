@@ -364,7 +364,7 @@ function BluesteinScratch{T}(N::Int, d::Direction) where {T<:Complex}
         a[pad_len - j] = chirp[2 + j]
     end
     chirp_fft = Vector{T}(undef, pad_len)
-    fft!(chirp_fft, a, 1, 1, FFT_FORWARD, graph[1].type, graph, 1)
+    fft_kernel!(chirp_fft, a, 1, 1, FFT_FORWARD, graph[1].type, graph, 1)
     chirp_fft ./= R(pad_len)
 
     return BluesteinScratch{T,CallGraph{T}}(N, pad_len, chirp, chirp_fft, a, Vector{T}(undef, pad_len), graph)
