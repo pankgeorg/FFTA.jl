@@ -31,7 +31,9 @@ end
     x = randn(n, n + 1, n + 2)
 
     @testset "against 2D arrays with mapslices, r=$r" for r in [[1,2], [1,3], [2,3]]
-        @test rfft(x, r) == mapslices(rfft, x; dims = r)
+        # strided and contiguous pencils take different code paths; `@muladd`
+        # contraction can differ by an ulp between them
+        @test rfft(x, r) ≈ mapslices(rfft, x; dims = r) rtol=1e-13
     end
 end
 
