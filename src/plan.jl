@@ -22,22 +22,25 @@ function FFTAPlan_cx{T,N}(
     FFTAPlan_cx{T,N,R}(cg, r, dir)
 end
 
-mutable struct FFTAPlan_re{T,N,R<:RegionTypes{N}} <: FFTAPlan{T,N}
+mutable struct FFTAPlan_re{T,N,R<:RegionTypes{N},S<:Real} <: FFTAPlan{T,N}
     const callgraph::NTuple{N,CallGraph{T}}
     const region::R
     const dir::Direction
     const flen::Int
-    const buf::Vector{T}   # scratch for the real<->complex packing, see `_re_buflen`
+    const buf::Vector{T}    # scratch for the real<->complex packing, see `_re_buflen`
+    const rbuf::Vector{S}   # contiguous copy of a strided real pencil, see `_re_pencil_loop!`
+    const cbuf::Vector{T}   # contiguous copy of a strided complex pencil
     pinv::AbstractFFTs.ScaledPlan
-    FFTAPlan_re{T,N,R}(cg::NTuple{N,CallGraph{T}}, r::R, dir::Direction, flen::Int, buf::Vector{T}) where {T,N,R<:RegionTypes{N}} =
-        new{T,N,R}(cg, r, dir, flen, buf)
+    FFTAPlan_re{T,N,R,S}(cg::NTuple{N,CallGraph{T}}, r::R, dir::Direction, flen::Int, buf::Vector{T}, rbuf::Vector{S}, cbuf::Vector{T}) where {T,N,R<:RegionTypes{N},S<:Real} =
+        new{T,N,R,S}(cg, r, dir, flen, buf, rbuf, cbuf)
 end
 function FFTAPlan_re{T,N}(
     cg::NTuple{N,CallGraph{T}}, r::R,
     dir::Direction, flen::Int
 ) where {T,N,R<:RegionTypes{N}}
+    S = real(T)
     buf = Vector{T}(undef, _re_buflen(flen, dir))
-    FFTAPlan_re{T,N,R}(cg, r, dir, flen, buf)
+    FFTAPlan_re{T,N,R,S}(cg, r, dir, flen, buf, Vector{S}(undef, flen), Vector{T}(undef, flen ÷ 2 + 1))
 end
 
 # Scratch length needed by the real-transform pencil kernels for a plan of
@@ -541,15 +544,37 @@ function _brfft_pencil!(x::AbstractVector{<:Real}, y::AbstractVector{T}, p::FFTA
     return x
 end
 
+# Unit-stride pencils are handed to the kernels directly; strided ones are
+# copied to the plan's contiguous buffers first. The copy costs one pass over
+# the pencil but keeps the kernel's scattered reads within cache lines — for a
+# stride of a cache line or more the kernel is otherwise 1.2–1.3× slower.
+_unit_stride(v::StridedArray) = stride(v, 1) == 1
+_unit_stride(v) = false
+
 # Apply `kernel!(y_pencil, x_pencil, p)` along dimension `R` of `x` and `y`.
 function _re_pencil_loop!(kernel!::F, y::AbstractArray{<:Any,N}, x::AbstractArray{<:Any,N}, p::FFTAPlan_re, ::Val{R}) where {F,N,R}
     Rpre  = CartesianIndices(ntuple(Base.Fix1(size, x),  Val(R - 1)))
     Rpost = CartesianIndices(ntuple(i -> size(x, R + i), Val(N - R)))
-    for Ipost in Rpost, Ipre in Rpre
-        @views kernel!(y[Ipre, :, Ipost], x[Ipre, :, Ipost], p)
+    contiguous = R == 1 && _unit_stride(x) && _unit_stride(y)
+    if contiguous
+        for Ipost in Rpost, Ipre in Rpre
+            @views kernel!(y[Ipre, :, Ipost], x[Ipre, :, Ipost], p)
+        end
+    else
+        xin, yout = _pencil_buffers(kernel!, p)
+        for Ipost in Rpost, Ipre in Rpre
+            xv = @view x[Ipre, :, Ipost]
+            yv = @view y[Ipre, :, Ipost]
+            copyto!(xin, xv)
+            kernel!(yout, xin, p)
+            copyto!(yv, yout)
+        end
     end
     return y
 end
+# forward: real in, complex out; backward: complex in, real out
+_pencil_buffers(::typeof(_rfft_pencil!), p::FFTAPlan_re) = (p.rbuf, p.cbuf)
+_pencil_buffers(::typeof(_brfft_pencil!), p::FFTAPlan_re) = (p.cbuf, p.rbuf)
 
 # Dispatch on the transform dimension so that the loop above is type-stable.
 function _re_along_dim!(kernel!::F, y::AbstractArray{<:Any,N}, x::AbstractArray{<:Any,N}, p::FFTAPlan_re, d::Int) where {F,N}
@@ -677,13 +702,13 @@ function AbstractFFTs.plan_inv(p::FFTAPlan_cx{T,N,R}) where {T,N,R}
     AbstractFFTs.ScaledPlan(q, _normalization(p))
 end
 
-function AbstractFFTs.plan_inv(p::FFTAPlan_re{T,N,R}) where {T,N,R}
+function AbstractFFTs.plan_inv(p::FFTAPlan_re{T,N,R,S}) where {T,N,R,S}
     dir = p.dir === FFT_FORWARD ? FFT_BACKWARD : FFT_FORWARD
     cutoff = p.callgraph[1].BLUESTEIN_CUTOFF
     n = p.flen
     nn = iseven(n) ? n >> 1 : n
     cg = (CallGraph{T}(nn, cutoff), ntuple(i -> CallGraph{T}(size(p, i + 1), cutoff), Val(N - 1))...)
-    q = FFTAPlan_re{T,N,R}(cg, p.region, dir, n, Vector{T}(undef, _re_buflen(n, dir)))
+    q = FFTAPlan_re{T,N,R,S}(cg, p.region, dir, n, Vector{T}(undef, _re_buflen(n, dir)), Vector{S}(undef, n), Vector{T}(undef, n ÷ 2 + 1))
     AbstractFFTs.ScaledPlan(q, _normalization(p))
 end
 
