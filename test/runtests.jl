@@ -90,6 +90,9 @@ Random.seed!(1)
             end
         end
     end
+    @testset verbose = true "Real plans: mul!" begin
+        include("real_mul.jl")
+    end
     @testset verbose = true "N-D" begin
         @testset verbose = true "Minimal tests" begin
             include("ndim/minimal_complex.jl")
