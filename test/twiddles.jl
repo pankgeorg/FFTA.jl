@@ -117,7 +117,7 @@ end
     @test FFTA.bluestein_pad_length(8443) == 32768
     @test FFTA.bluestein_pad_length(65537) == 262144
     # the mechanism, with a factor at which 3-smooth lengths are worth it
-    @test FFTA.bluestein_pad_length(2200; factor = 1.5) == 4374     # 2·3^7 = 4374 vs 8192
+    @test FFTA.bluestein_pad_length(2200; factor = 1.5) == 4608     # 2^9·3^2 (2·3^7 = 4374 < 2N-1) vs 8192
     @test FFTA.bluestein_pad_length(8443; factor = 1.5) == 17496
     @test FFTA.bluestein_pad_length(73; factor = 1.0) == 256          # below the 2048 floor
 end
