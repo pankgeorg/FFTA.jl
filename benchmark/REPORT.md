@@ -19,6 +19,19 @@ Generated 2026-08-29 18:14 UTC by `benchmark/report.jl` from `results_suite.json
 | Time budget per measurement (s) | 0.5 |
 | Run date (UTC) | 2026-08-29T17:36:11.141 |
 
+## Companion x86-64 run
+
+The same suite was run on an x86-64 machine (Intel Core Ultra 7 165H,
+AVX2 + FMA, no AVX-512, Julia 1.12.6, FFTW 3.3.11 provider `fftw`,
+`-t 8`, identical settings): see [`x86-64/REPORT.md`](x86-64/REPORT.md),
+its [`PROVENANCE.md`](x86-64/PROVENANCE.md) and the per-branch
+before/after results under `x86-64/branches/`. Headline: FFTA's gap to
+FFTW is 1.22× wider (geometric mean over the size classes) on AVX2 than
+on NEON, worst in single precision and on smooth sizes — the SIMD effect
+the analysis predicts — and the Bluestein calibration files
+(`x86-64/calib_*.md`) show that the DFT/Bluestein crossover and the cost
+of 3-smooth padding lengths are architecture dependent.
+
 ## Methodology
 
 * Both packages are loaded in one Julia process; FFTA plans are created via
