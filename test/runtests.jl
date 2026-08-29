@@ -106,6 +106,9 @@ Random.seed!(1)
         @testset verbose = true "Minimal tests" begin
             include("ndim/minimal_complex.jl")
         end
+        @testset verbose = true "Real" begin
+            include("ndim/real.jl")
+        end
     end
     @testset verbose = true "Custom element types" begin
         include("custom_element_types.jl")

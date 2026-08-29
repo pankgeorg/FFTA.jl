@@ -181,15 +181,15 @@ function _plan_rfft(
         nn = iseven(n) ? n >> 1 : n
         g = CallGraph{Complex{T}}(nn, BLUESTEIN_CUTOFF, FFT_FORWARD)
         return FFTAPlan_re{Complex{T},1}((g,), R1, FFT_FORWARD, n; num_threads)
-    elseif M == 2
-        R2 = _sort(region)
-        n = size(x, R2[1])
-        nn = iseven(n) ? n >> 1 : n
-        g1 = CallGraph{Complex{T}}(nn, BLUESTEIN_CUTOFF, FFT_FORWARD)
-        g2 = CallGraph{Complex{T}}(size(x, R2[2]), BLUESTEIN_CUTOFF, FFT_FORWARD)
-        return FFTAPlan_re{Complex{T},2}((g1, g2), R2, FFT_FORWARD, n; num_threads)
     else
-        throw(ArgumentError("only supports 1D and 2D FFTs"))
+        # real transform along the first region dimension (half length when
+        # even), complex transforms along the others
+        RM = _sort(region)
+        n = size(x, RM[1])
+        nn = iseven(n) ? n >> 1 : n
+        cg = (CallGraph{Complex{T}}(nn, BLUESTEIN_CUTOFF, FFT_FORWARD),
+              ntuple(i -> CallGraph{Complex{T}}(size(x, RM[i + 1]), BLUESTEIN_CUTOFF, FFT_FORWARD), Val(M - 1))...)
+        return FFTAPlan_re{Complex{T},M}(cg, RM, FFT_FORWARD, n; num_threads)
     end
 end
 
@@ -208,14 +208,12 @@ function _plan_brfft(
         nn = iseven(len) ? len >> 1 : len
         g = CallGraph{T}(nn, BLUESTEIN_CUTOFF, FFT_BACKWARD)
         return FFTAPlan_re{T,1}((g,), R1, FFT_BACKWARD, len; num_threads)
-    elseif M == 2
-        R2 = _sort(region)
-        nn = iseven(len) ? len >> 1 : len
-        g1 = CallGraph{T}(nn, BLUESTEIN_CUTOFF, FFT_BACKWARD)
-        g2 = CallGraph{T}(size(x, R2[2]), BLUESTEIN_CUTOFF, FFT_BACKWARD)
-        return FFTAPlan_re{T,2}((g1, g2), R2, FFT_BACKWARD, len; num_threads)
     else
-        throw(ArgumentError("only supports 1D and 2D FFTs"))
+        RM = _sort(region)
+        nn = iseven(len) ? len >> 1 : len
+        cg = (CallGraph{T}(nn, BLUESTEIN_CUTOFF, FFT_BACKWARD),
+              ntuple(i -> CallGraph{T}(size(x, RM[i + 1]), BLUESTEIN_CUTOFF, FFT_BACKWARD), Val(M - 1))...)
+        return FFTAPlan_re{T,M}(cg, RM, FFT_BACKWARD, len; num_threads)
     end
 end
 
@@ -637,38 +635,49 @@ function LinearAlgebra.mul!(y::AbstractArray{<:Real,N}, p::FFTAPlan_re{T,1}, x::
     return y
 end
 
-#### 2D plan
-# The real transform is taken along the first region dimension, then a complex
-# transform along the second (forward), or the reverse (backward).
+#### M-d plan (M >= 2)
+# The real transform is taken along the first region dimension, then complex
+# transforms along the others (forward), or the reverse (backward).
+function _check_re_other_dims(p::FFTAPlan_re{T,M}, x, fwd::Bool) where {T,M}
+    for k in 2:M
+        d = p.region[k]
+        if size(x, d) != size(p, k)
+            expected = ntuple(i -> i == 1 && !fwd ? size(p, 1) ÷ 2 + 1 : size(p, i), Val(M))
+            actual = ntuple(i -> size(x, p.region[i]), Val(M))
+            throw(DimensionMismatch("real $(M)D plan has size $(size(p)). Transform dimensions of input array are $actual but should be $expected"))
+        end
+    end
+end
+
 ##### Forward
-function LinearAlgebra.mul!(y::AbstractArray{T,N}, p::FFTAPlan_re{T,2}, x::AbstractArray{<:Real,N}) where {T<:Complex,N}
+function LinearAlgebra.mul!(y::AbstractArray{T,N}, p::FFTAPlan_re{T,M}, x::AbstractArray{<:Real,N}) where {T<:Complex,N,M}
     if p.dir !== FFT_FORWARD
         throw(ArgumentError("only FFT_FORWARD supported for real arrays"))
     end
     Base.require_one_based_indexing(x, y)
-    d1, d2 = p.region
+    d1 = p.region[1]
     _check_re_dims(y, p, x, d1, true)
-    if size(x, d2) != size(p, 2)
-        throw(DimensionMismatch("real 2D plan has size $(size(p)). Transform dimensions of input array are $((size(x, d1), size(x, d2))) but should be $(size(p))"))
-    end
+    _check_re_other_dims(p, x, true)
     _re_along_dim!(_rfft_pencil!, y, x, p, d1)
-    _cx_along_dim!(y, p.workers, 2, FFT_FORWARD, d2)
+    for k in 2:M
+        _cx_along_dim!(y, p.workers, k, FFT_FORWARD, Int(p.region[k]))
+    end
     return y
 end
 
 ##### Backward
-function LinearAlgebra.mul!(y::AbstractArray{<:Real,N}, p::FFTAPlan_re{T,2}, x::AbstractArray{T,N}) where {T<:Complex,N}
+function LinearAlgebra.mul!(y::AbstractArray{<:Real,N}, p::FFTAPlan_re{T,M}, x::AbstractArray{T,N}) where {T<:Complex,N,M}
     if p.dir !== FFT_BACKWARD
         throw(ArgumentError("only FFT_BACKWARD supported for complex arrays"))
     end
     Base.require_one_based_indexing(x, y)
-    d1, d2 = p.region
+    d1 = p.region[1]
     _check_re_dims(y, p, x, d1, false)
-    if size(x, d2) != size(p, 2)
-        throw(DimensionMismatch("real 2D plan has size $(size(p)). Transform dimensions of input array are $((size(x, d1), size(x, d2))) but should be $((size(p, 1) ÷ 2 + 1, size(p, 2)))"))
+    _check_re_other_dims(p, x, false)
+    tmp = copy(x)   # the complex passes must not modify the input
+    for k in M:-1:2
+        _cx_along_dim!(tmp, p.workers, k, FFT_BACKWARD, Int(p.region[k]))
     end
-    tmp = copy(x)   # the complex pass must not modify the input
-    _cx_along_dim!(tmp, p.workers, 2, FFT_BACKWARD, d2)
     _re_along_dim!(_brfft_pencil!, y, tmp, p, d1)
     return y
 end
