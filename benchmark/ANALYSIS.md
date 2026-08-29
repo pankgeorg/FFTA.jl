@@ -298,10 +298,53 @@ explicit `SIMD.jl`/`VectorizationBase` vectors in the codelet generator, or
 vectorising across pencils in ND/batched transforms (each lane a different
 column — the easy and big win for the downstream use case). On AVX2/AVX-512
 x86-64 the same argument applies with 2–4 `ComplexF64` per register, so the
-FFTA/FFTW gap on x86-64 is expected to be *larger* than the aarch64 numbers
+FFTA/FFTW gap on x86-64 was expected to be *larger* than the aarch64 numbers
 here until this is done. **Verdict: the last ~1.3–2× on cache-resident
 sizes is structural until FFTA has an explicitly vectorised kernel
 generator; it is not blocked by the language.**
+
+**What the x86-64 companion run says (see §5.3a).** The gap *is* larger on
+AVX2, by 1.22× overall — but the vector-width argument explains only the
+power-of-two part of it (1.21×). The bulk of the x86 penalty sits on
+composite sizes with factors of 5 and 7 (up to 3.8×), i.e. on the kernels
+that are *not* the radix-4 one. So the first x86-specific lever is not the
+vectorised generator but radix-5/7 butterflies (work item 3), and the
+ceiling table below needs a per-class x86 adjustment rather than a uniform
+one.
+
+### 5.3a The x86-64 penalty is mostly a radix-5/7 penalty
+
+The same suite on an AVX2 machine (Intel Core Ultra 7 165H, no AVX-512;
+`benchmark/x86-64/` in the report) gives, per size class, the ratio of the
+x86-64 FFTA/FFTW gap to the aarch64 one (geometric mean over the four
+element types, FFTA 0.3.1):
+
+| class | x86-64 gap / aarch64 gap |
+|:--|--:|
+| smooth composites | **1.60×** |
+| batched `dims=1` | 1.23× |
+| powers of two | 1.21× |
+| primes / prime × small | 1.07× |
+| 2D | 1.06× |
+| 3D | 0.96× |
+| batched `dims=2` | 0.78× |
+
+Within the smooth class the penalty tracks the factor content
+(`ComplexF64`): 98304 = 2^15·3 → 1.21×; 54 = 2·3^3 → 1.33×; 25 = 5^2 →
+2.10×; 46305 = 3^3·5·7^3 → 2.39×; 10^6 = 2^6·5^6 → 2.58×;
+441000 = 2^3·3^2·5^3·7^2 → **3.77×**. Factors of 2 and 3 cost ~1.2–1.3×
+more on x86-64 than on aarch64; factors of 5 and 7 cost 2.1–3.8× more. The
+Bluestein padding calibration (§4.4, `benchmark/x86-64/calib_*.md`) found
+the same thing independently — a 3-smooth length costs 2.0–3.1× a power of
+two per element on x86-64 against 1.3–2.3× on aarch64. Two measurements,
+one conclusion: FFTA's non-radix-4 kernels (the O(n²) DFT leaves for 5 and
+7, the composite step, the radix-3 kernel) degrade disproportionately on
+x86-64, presumably because the radix-4 kernel is the one LLVM vectorises
+best and the wider registers make the difference larger. The batched
+`dims=2` class is the one place x86-64 is relatively *faster*; it is also
+the shape where the merged optimisations gain least on aarch64 and regress
+on x86-64 (§6), i.e. that shape behaves qualitatively differently between
+the two architectures in both directions.
 
 ### 5.4 Memory-bound regime
 
@@ -370,6 +413,13 @@ composites, primes) are exactly the ones fixed by storing twiddles and
 codelets, i.e. by making the plan carry the work a plan is supposed to
 carry.
 
+**x86-64 adjustment (from §5.3a).** The table above is for aarch64. On
+AVX2 x86-64 multiply the power-of-two, prime and ND rows by ~1.1–1.2×, but
+the smooth-composite row by 1.6× on average and by 2–4× for sizes rich in
+factors of 5 and 7 — until radix-5/7 butterflies replace the O(n²) leaves
+(work item 3). On AVX-512 parts both factors are expected to be larger
+still (not measured).
+
 ## 7. Recommendation for downstream projects today
 
 Until the fixes land: FFTA is a reasonable substitute for 1D power-of-two
@@ -387,7 +437,10 @@ FFTA and FFTW can coexist in one environment at all.
 2. `mul!` for real plans; zero-allocation `rfft`/`irfft`; `dims` path for
    real transforms without `mapslices` (§4.6).
 3. Straight-line base cases for the power-of-two kernel (16/32/64) and
-   codelets for 3/5/7 leaves; radix-5/7 butterflies (§4.2, §4.3).
+   codelets for 3/5/7 leaves; radix-5/7 butterflies (§4.2, §4.3). **On
+   x86-64 the radix-5/7 butterflies are the single largest
+   architecture-specific gap in the sweep (§5.3a) and are worth more than
+   item 7 there.**
 4. Plan-owned ND buffers, contiguous-pencil fast path, threading across
    pencils (§4.7, §5.6).
 5. Smooth-length Bluestein padding; retune the cutoff; Rader (§4.4, §4.5).
