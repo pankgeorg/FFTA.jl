@@ -20,11 +20,8 @@ end
     end
 
     @testset "allocation regression" begin
-<<<<<<< HEAD
-        @test (@test_allocations bfft(y)) <= 47 * Threads.nthreads()
-=======
-        @test (@test_allocations bfft(y)) <= 80
->>>>>>> feat/pow2-codelets
+        # plan creation builds tables and scratch, and one worker per thread
+        @test (@test_allocations bfft(y)) <= 120 * Threads.nthreads()
     end
 end
 

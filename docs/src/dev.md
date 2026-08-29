@@ -32,4 +32,5 @@ pow2_twiddles
 pow3_twiddles
 node_twiddles
 BluesteinScratch
+bluestein_pad_length
 ```
