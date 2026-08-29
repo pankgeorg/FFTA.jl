@@ -112,9 +112,12 @@ end
     end
     @test FFTA.bluestein_pad_length(73) == 256       # small: always a power of two
     @test FFTA.bluestein_pad_length(1009) == 2048
-    @test FFTA.bluestein_pad_length(4099) in (8748, 9216)   # 3-smooth, cheaper than 16384
-    @test FFTA.bluestein_pad_length(8443) == 17496
-    @test FFTA.bluestein_pad_length(65537) == 139968
+    # with the conservative threshold these keep the power of two
+    @test FFTA.bluestein_pad_length(4099) == 16384
+    @test FFTA.bluestein_pad_length(8443) == 32768
+    @test FFTA.bluestein_pad_length(65537) == 262144
+    # a 3-smooth pad is taken when it is far enough below the power of two
+    @test FFTA.bluestein_pad_length(2200) == 4374     # 2·3^7 = 4374 vs 8192
 end
 
 @testset "planned execution does not allocate, n=$n" for n in (5, 47, 64, 73, 101, 720, 1000, 1009, 4096, 65537)
