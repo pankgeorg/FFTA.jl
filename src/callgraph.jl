@@ -77,8 +77,13 @@ struct CallGraph{T<:Complex}
 end
 
 # Primes below this use the O(N²) DFT with a twiddle table; at and above it
-# Bluestein's algorithm is cheaper (crossover measured at ~45 for ComplexF64).
-const DEFAULT_BLUESTEIN_CUTOFF = 47
+# Bluestein's algorithm is used. Measured crossovers (ComplexF64, planned
+# execution): x86-64 AVX2 (Core Ultra 7 165H) n ≈ 23 — Bluestein is 1.7–2.2×
+# faster than the DFT leaf for n = 41–47; aarch64 NEON (Neoverse-N1) n ≈ 29
+# for the 64-point pad, with the DFT leaf up to 1.45× faster again at n = 37–43
+# where the pad grows to 128, and Bluestein ahead from 47. 29 never loses
+# much on either.
+const DEFAULT_BLUESTEIN_CUTOFF = 29
 
 # Get the node in the graph at index i
 Base.getindex(g::CallGraph{T}, i::Int) where {T} = g.nodes[i]
@@ -310,12 +315,18 @@ end
 $(TYPEDSIGNATURES)
 Length of the padded convolution in Bluestein's algorithm for a length-`N`
 transform: the smallest power of two ≥ 2N-1, unless a 3-smooth length
-`2^a 3^b ≥ 2N-1` is enough smaller to be cheaper. Measured on FFTA, a
-transform of a length with factors of 3 costs about 1.9× per `n log n`
-compared to a power of two (the composite step and the radix-3 kernel are
-slower than the radix-4 one), so `m` is preferred over `p` when
-`1.9 m log m < p log p`; below 2048 the fixed overhead of the composite
-step dominates and the power of two is always used.
+`2^a 3^b ≥ 2N-1` is enough smaller to be cheaper.
+
+How much cheaper it has to be is machine dependent. Measured per `n log n`
+against a power of two (ComplexF64, planned execution), a length with
+factors of 3 costs 1.3–2.3× on aarch64 NEON (Neoverse-N1) but 2.0–3.1× on
+x86-64 AVX2 (Core Ultra 7 165H); with a threshold of 1.9 the 3-smooth pad
+was a 1.58× win at N = 8443 on aarch64 and a 1.19× loss on x86-64. The
+threshold is therefore set to 2.1, at which the chooser never loses on
+either machine (and rarely fires: it needs a 3-smooth length well under
+half the power of two). Below 2048 the fixed overhead of the composite
+step dominates and the power of two is always used. The constant should
+be revisited when the composite/radix-3 path gets faster.
 """
 function bluestein_pad_length(N::Int)
     m = 2N - 1
@@ -325,7 +336,7 @@ function bluestein_pad_length(N::Int)
     pow3 = 3
     while pow3 < p
         c = pow3 * nextpow(2, cld(m, pow3))   # smallest 2^a·3^b with this power of 3
-        cost = 1.9 * c * log2(c)
+        cost = 2.1 * c * log2(c)
         if c >= max(m, 2048) && cost < best_cost
             best, best_cost = c, cost
         end
