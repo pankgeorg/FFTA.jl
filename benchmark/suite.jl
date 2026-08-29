@@ -170,10 +170,12 @@ bench_plan(mk) = timeit(mk)
 
 relerr(a, b) = norm(a .- b) / max(norm(b), floatmin(real(eltype(b))))
 
-function record!(entry)
-    push!(RESULTS, entry)
+# The output file is rewritten after every case so that a long run can be
+# followed (and salvaged); `complete` is only set by the final write.
+function record!(entry; complete::Bool = false)
+    entry === nothing || push!(RESULTS, entry)
     open(OUTFILE, "w") do io
-        JSON.print(io, Dict("meta" => META, "results" => RESULTS), 1)
+        JSON.print(io, Dict("meta" => META, "complete" => complete, "results" => RESULTS), 1)
     end
 end
 
@@ -251,6 +253,7 @@ function bench_case!(kind::Symbol, T::Type, sz::Tuple, dims; shape::String,
     r = haskey(entry, "ffta_exec_min") ? round(entry["ffta_exec_min"] / entry["fftw_exec_min"]; digits = 2) : "n/a"
     println(rpad("$kind $(T) $(sizestr(sz)) dims=$dims [$(shape)] thr=$fftw_threads", 60),
             " fftw=", round(entry["fftw_exec_min"] * 1e6; digits = 2), "us  ratio=", r)
+    flush(stdout)   # progress lines are block-buffered when stdout is a file
     return entry
 end
 
@@ -362,4 +365,5 @@ if "threads" in ONLY && NTHREADS > 1
     FFTW.set_num_threads(1)
 end
 
+record!(nothing; complete = true)
 println("\nWrote $(length(RESULTS)) results to $OUTFILE")
