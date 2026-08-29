@@ -2,37 +2,42 @@
 
 abstract type FFTAPlan{T,N} <: AbstractFFTs.Plan{T} end
 
-struct FFTAInvPlan{_T,_N} <: FFTAPlan{_T,_N} end
-
 const RegionTypes{N} = Union{Int,AbstractVector{Int},NTuple{N,Int}}
 
-struct FFTAPlan_cx{T,N,R<:RegionTypes{N}} <: FFTAPlan{T,N}
-    callgraph::NTuple{N,CallGraph{T}}
-    region::R
-    dir::Direction
-    pinv::FFTAInvPlan{T,N}
+# The plan types are mutable so that `AbstractFFTs.inv` can cache the inverse
+# plan in the initially undefined `pinv` field (see `plan_inv`), as FFTW.jl does.
+
+mutable struct FFTAPlan_cx{T,N,R<:RegionTypes{N}} <: FFTAPlan{T,N}
+    const callgraph::NTuple{N,CallGraph{T}}
+    const region::R
+    const dir::Direction
+    pinv::AbstractFFTs.ScaledPlan
+    FFTAPlan_cx{T,N,R}(cg::NTuple{N,CallGraph{T}}, r::R, dir::Direction) where {T,N,R<:RegionTypes{N}} =
+        new{T,N,R}(cg, r, dir)
 end
 function FFTAPlan_cx{T,N}(
     cg::NTuple{N,CallGraph{T}}, r::R,
     dir::Direction
 ) where {T,N,R<:RegionTypes{N}}
-    FFTAPlan_cx{T,N,R}(cg, r, dir, FFTAInvPlan{T,N}())
+    FFTAPlan_cx{T,N,R}(cg, r, dir)
 end
 
-struct FFTAPlan_re{T,N,R<:RegionTypes{N}} <: FFTAPlan{T,N}
-    callgraph::NTuple{N,CallGraph{T}}
-    region::R
-    dir::Direction
-    flen::Int
-    buf::Vector{T}   # scratch for the real<->complex packing, see `_re_buflen`
-    pinv::FFTAInvPlan{T,N}
+mutable struct FFTAPlan_re{T,N,R<:RegionTypes{N}} <: FFTAPlan{T,N}
+    const callgraph::NTuple{N,CallGraph{T}}
+    const region::R
+    const dir::Direction
+    const flen::Int
+    const buf::Vector{T}   # scratch for the real<->complex packing, see `_re_buflen`
+    pinv::AbstractFFTs.ScaledPlan
+    FFTAPlan_re{T,N,R}(cg::NTuple{N,CallGraph{T}}, r::R, dir::Direction, flen::Int, buf::Vector{T}) where {T,N,R<:RegionTypes{N}} =
+        new{T,N,R}(cg, r, dir, flen, buf)
 end
 function FFTAPlan_re{T,N}(
     cg::NTuple{N,CallGraph{T}}, r::R,
     dir::Direction, flen::Int
 ) where {T,N,R<:RegionTypes{N}}
     buf = Vector{T}(undef, _re_buflen(flen, dir))
-    FFTAPlan_re{T,N,R}(cg, r, dir, flen, buf, FFTAInvPlan{T,N}())
+    FFTAPlan_re{T,N,R}(cg, r, dir, flen, buf)
 end
 
 # Scratch length needed by the real-transform pencil kernels for a plan of
@@ -190,7 +195,7 @@ function LinearAlgebra.mul!(y::AbstractVector{U}, p::FFTAPlan_cx{T,1}, x::Abstra
     if size(p) != size(x)
         throw(DimensionMismatch("plan has axes $(size(p)), but input array has axes $(size(x))"))
     end
-    fft!(y, x, 1, 1, p.dir, p.callgraph[1][1].type, p.callgraph[1], 1)
+    fft_kernel!(y, x, 1, 1, p.dir, p.callgraph[1][1].type, p.callgraph[1], 1)
     return y
 end
 
@@ -230,7 +235,7 @@ function _mul_loop!(
     cg = p.callgraph[1]
     t = cg[1].type
     for Ipost in Rpost, Ipre in Rpre
-        @views fft!(y[Ipre,:,Ipost], x[Ipre,:,Ipost], 1, 1, p.dir, t, cg, 1)
+        @views fft_kernel!(y[Ipre,:,Ipost], x[Ipre,:,Ipost], 1, 1, p.dir, t, cg, 1)
     end
 end
 
@@ -368,7 +373,7 @@ function fft_along_dim!(
         for j in cols
             ibuf[j] = A[Ipre, j, Ipost]
         end
-        fft!(obuf, ibuf, 1, 1, d, t, cg, 1)
+        fft_kernel!(obuf, ibuf, 1, 1, d, t, cg, 1)
         for j in cols
             A[Ipre, j, Ipost] = obuf[j]
         end
@@ -455,7 +460,7 @@ function _rfft_pencil!(y::AbstractVector{T}, x::AbstractVector{<:Real}, p::FFTAP
         @inbounds for j in 1:m
             buf[j] = T(x[2j - 1], x[2j])
         end
-        fft!(view(y, 1:m), buf, 1, 1, FFT_FORWARD, cg[1].type, cg, 1)
+        fft_kernel!(view(y, 1:m), buf, 1, 1, FFT_FORWARD, cg[1].type, cg, 1)
 
         # Construct the result by first constructing the elements of the
         # real and imaginary part, followed by the usual radix-2 assembly,
@@ -480,7 +485,7 @@ function _rfft_pencil!(y::AbstractVector{T}, x::AbstractVector{<:Real}, p::FFTAP
         # Odd length: run the full transform on the real input (the kernels
         # accept real input; the DFT leaf exploits its symmetry) and keep the
         # first half.
-        fft!(buf, x, 1, 1, FFT_FORWARD, cg[1].type, cg, 1)
+        fft_kernel!(buf, x, 1, 1, FFT_FORWARD, cg[1].type, cg, 1)
         @inbounds for j in 1:(n ÷ 2 + 1)
             y[j] = buf[j]
         end
@@ -512,7 +517,7 @@ function _brfft_pencil!(x::AbstractVector{<:Real}, y::AbstractVector{T}, p::FFTA
                 wj = singleton_step(wj, z1)
             end
         end
-        fft!(out, tmp, 1, 1, FFT_BACKWARD, cg[1].type, cg, 1)
+        fft_kernel!(out, tmp, 1, 1, FFT_BACKWARD, cg[1].type, cg, 1)
         @inbounds for j in 1:m
             x[2j - 1] = real(out[j])
             x[2j]     = imag(out[j])
@@ -528,7 +533,7 @@ function _brfft_pencil!(x::AbstractVector{<:Real}, y::AbstractVector{T}, p::FFTA
         @inbounds for j in h + 1:n
             tmp[j] = conj(y[n - j + 2])
         end
-        fft!(out, tmp, 1, 1, FFT_BACKWARD, cg[1].type, cg, 1)
+        fft_kernel!(out, tmp, 1, 1, FFT_BACKWARD, cg[1].type, cg, 1)
         @inbounds for j in 1:n
             x[j] = real(out[j])
         end
@@ -657,4 +662,71 @@ function Base.:*(p::FFTAPlan_re{T,M}, x::AbstractArray{T,N}) where {T<:Complex,M
     d1 = first(p.region)
     y = similar(x, real(T), ntuple(i -> i == d1 ? p.flen : size(x, i), Val(N)))
     return LinearAlgebra.mul!(y, p, x)
+end
+
+
+# Inverse plans
+# `AbstractFFTs.inv(p)` calls `plan_inv(p)` once and caches it in `p.pinv`;
+# `p \\ x` and `ldiv!(y, p, x)` go through `inv(p)`.
+
+function AbstractFFTs.plan_inv(p::FFTAPlan_cx{T,N,R}) where {T,N,R}
+    dir = p.dir === FFT_FORWARD ? FFT_BACKWARD : FFT_FORWARD
+    cutoff = p.callgraph[1].BLUESTEIN_CUTOFF
+    cg = ntuple(i -> CallGraph{T}(size(p, i), cutoff), Val(N))
+    q = FFTAPlan_cx{T,N,R}(cg, p.region, dir)
+    AbstractFFTs.ScaledPlan(q, _normalization(p))
+end
+
+function AbstractFFTs.plan_inv(p::FFTAPlan_re{T,N,R}) where {T,N,R}
+    dir = p.dir === FFT_FORWARD ? FFT_BACKWARD : FFT_FORWARD
+    cutoff = p.callgraph[1].BLUESTEIN_CUTOFF
+    n = p.flen
+    nn = iseven(n) ? n >> 1 : n
+    cg = (CallGraph{T}(nn, cutoff), ntuple(i -> CallGraph{T}(size(p, i + 1), cutoff), Val(N - 1))...)
+    q = FFTAPlan_re{T,N,R}(cg, p.region, dir, n, Vector{T}(undef, _re_buflen(n, dir)))
+    AbstractFFTs.ScaledPlan(q, _normalization(p))
+end
+
+# 1 / (product of the transform lengths); `size(p)` lists exactly those.
+_normalization(p::FFTAPlan{T,N}) where {T,N} =
+    AbstractFFTs.normalization(real(T), size(p), ntuple(identity, Val(N)))
+
+# In-place plans
+# (`AbstractFFTs.fft!`/`bfft!`/`ifft!` build these; the internal kernel is
+# `fft_kernel!` so that it does not shadow `AbstractFFTs.fft!`.)
+# FFTA's kernels are out of place, so an in-place plan wraps an ordinary plan
+# and, when the input and output alias, transforms a copy of the input held
+# in the plan's buffer.
+
+mutable struct FFTAPlan_inplace{T,N,M,P<:FFTAPlan_cx{T,M}} <: FFTAPlan{T,M}
+    const p::P
+    const buf::Array{T,N}   # copy of the input when it aliases the output
+    pinv::AbstractFFTs.ScaledPlan
+    FFTAPlan_inplace(p::P, buf::Array{T,N}) where {T,N,M,P<:FFTAPlan_cx{T,M}} = new{T,N,M,P}(p, buf)
+end
+Base.size(p::FFTAPlan_inplace) = size(p.p)
+Base.size(p::FFTAPlan_inplace, i::Int) = size(p.p, i)
+
+AbstractFFTs.plan_fft!(x::AbstractArray{T,N}, region; kwargs...) where {T<:Complex,N} =
+    FFTAPlan_inplace(_plan_fft(x, region, FFT_FORWARD; kwargs...), Array{T,N}(undef, size(x)))
+AbstractFFTs.plan_bfft!(x::AbstractArray{T,N}, region; kwargs...) where {T<:Complex,N} =
+    FFTAPlan_inplace(_plan_fft(x, region, FFT_BACKWARD; kwargs...), Array{T,N}(undef, size(x)))
+
+function LinearAlgebra.mul!(y::AbstractArray{T,N}, ip::FFTAPlan_inplace{T,N}, x::AbstractArray{T,N}) where {T,N}
+    if y === x
+        if size(ip.buf) != size(x)
+            throw(DimensionMismatch("in-place plan was created for size $(size(ip.buf)), input has size $(size(x))"))
+        end
+        copyto!(ip.buf, x)
+        LinearAlgebra.mul!(y, ip.p, ip.buf)
+    else
+        LinearAlgebra.mul!(y, ip.p, x)
+    end
+    return y
+end
+Base.:*(ip::FFTAPlan_inplace{T}, x::AbstractArray{T}) where {T} = LinearAlgebra.mul!(x, ip, x)
+
+function AbstractFFTs.plan_inv(ip::FFTAPlan_inplace)
+    s = AbstractFFTs.plan_inv(ip.p)
+    AbstractFFTs.ScaledPlan(FFTAPlan_inplace(s.p, ip.buf), s.scale)
 end
