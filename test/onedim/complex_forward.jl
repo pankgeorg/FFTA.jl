@@ -20,8 +20,13 @@ end
     end
 
     @testset "allocation regression" begin
+<<<<<<< HEAD
         # plan creation builds one worker per thread
         @test (@test_allocations fft(x)) <= 47 * Threads.nthreads()
+=======
+        # plan creation allocates one twiddle table per node (and the Bluestein scratch)
+        @test (@test_allocations fft(x)) <= 80
+>>>>>>> feat/pow2-codelets
     end
 end
 

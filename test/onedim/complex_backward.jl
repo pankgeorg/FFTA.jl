@@ -20,7 +20,11 @@ end
     end
 
     @testset "allocation regression" begin
+<<<<<<< HEAD
         @test (@test_allocations bfft(y)) <= 47 * Threads.nthreads()
+=======
+        @test (@test_allocations bfft(y)) <= 80
+>>>>>>> feat/pow2-codelets
     end
 end
 
