@@ -186,7 +186,7 @@ Radix-4 FFT for powers of 2, in place
 - `tw`: Twiddle table, see `pow2_twiddles` (omit it to compute the table on the fly)
 - `toff`: Offset of the current recursion level in `tw`
 - `buf`: Gather buffer for the leaves-first order of large transforms (see
-  `leaffirst_buflen`; empty to use the plain recursion)
+  `leaffirst_buflen`; `nothing` or empty to use the plain recursion)
 
 """
 function fft_pow2_radix4!(
@@ -196,10 +196,10 @@ function fft_pow2_radix4!(
     start_in::Int, stride_in::Int,
     d::Direction,
     tw::AbstractVector{T}, toff::Int,
-    buf::AbstractVector{T} = T[]
+    buf::Union{Nothing,AbstractVector{T}} = nothing
 ) where {T<:Complex, U}
     # Large transforms: leaves first, gathered through `buf` (see leaffirst.jl)
-    if !isempty(buf) && N >= LEAFFIRST_MIN && stride_out == 1
+    if buf !== nothing && !isempty(buf) && N >= LEAFFIRST_MIN && stride_out == 1
         _pow2_leaffirst!(out, in, N, start_out, start_in, stride_in, d, tw, toff, buf)
         return
     end
