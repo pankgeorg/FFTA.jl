@@ -20,6 +20,12 @@
 
 const ODD_CODELET_SIZES = (5, 7, 11, 13)
 
+# real coefficient × (real or complex) value + (real or complex) accumulator
+@inline _fma(a::T, b::T, c::T) where {T<:Real} = fma(a, b, c)
+@inline _fma(a::T, b::Complex{T}, c::Complex{T}) where {T<:Real} = Complex(fma(a, real(b), real(c)), fma(a, imag(b), imag(c)))
+@inline _fma(a::T, b::T, c::Complex{T}) where {T<:Real} = Complex(fma(a, b, real(c)), imag(c))
+@inline _fma(a::T, b::Complex{T}, c::T) where {T<:Real} = Complex(fma(a, real(b), c), a * imag(b))
+
 # Emit the statements of the length-`N` DFT of the symbols `xs` in direction
 # `dir` (`-1` forward), returning the output symbols.
 function _gen_odd!(stmts::Vector{Any}, xs::Vector{Symbol}, ::Type{T}, dir::Int, counter::Ref{Int}) where {T}
@@ -39,18 +45,20 @@ function _gen_odd!(stmts::Vector{Any}, xs::Vector{Symbol}, ::Type{T}, dir::Int, 
     end
     outs[1] = acc
     for k in 1:h
-        # cosine sum (real coefficients), starting from x_0
+        # cosine sum (real coefficients), starting from x_0; explicit fma (not
+        # muladd) so that rounding does not depend on whether LLVM contracts
+        # for a particular array type
         c = xs[1]
         for j in 1:h
             coef = T(cospi(2 * (j * k % N) / N))
-            t = newsym(); push!(stmts, :($t = muladd($coef, $(as[j]), $c))); c = t
+            t = newsym(); push!(stmts, :($t = _fma($coef, $(as[j]), $c))); c = t
         end
         # sine sum, with the direction folded into the coefficients
         s = nothing
         for j in 1:h
             coef = T(dir * sinpi(2 * (j * k % N) / N))
             t = newsym()
-            push!(stmts, s === nothing ? :($t = $coef * $(bs[j])) : :($t = muladd($coef, $(bs[j]), $s)))
+            push!(stmts, s === nothing ? :($t = $coef * $(bs[j])) : :($t = _fma($coef, $(bs[j]), $s)))
             s = t
         end
         # ± i·s
