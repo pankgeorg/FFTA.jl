@@ -280,8 +280,15 @@ its own SSA variable, twiddles folded to constants) gives, on this machine:
 So: **codelets up to 64 points are within 1.0–1.6× of FFTW and compile in
 under a second**; LLVM's compile time grows super-linearly beyond that
 (a naive O(n²) 64-point unroll took 39 s), so the codelet set must be small
-and fixed (e.g. 2–64 for powers of two, 3, 5, 7, 9, 11, 13, 25), with the
-generic recursion above it. The compile cost is paid once per (n, T) per
+and fixed — **2–64 for powers of two**, plus 3, 5, 7, 9, 11, 13, 25 — with
+the generic recursion above it. The upper end is set by register pressure,
+not compile time: on x86-64 (AVX2, 16 architectural vector registers
+against NEON's 32) the same generator reproduces the aarch64 ratios up to
+64 points (0.51 / 1.11 / 1.54 / 1.13 at 8/16/32/64) but spills earlier and
+about twice as often beyond, giving 1.70× at 128 and **3.62× at 256**
+(aarch64: 1.36× and 1.73×) although it compiles them *faster* (4.9 s vs
+6.8 s at 256). 128- and 256-point codelets are therefore pessimisations on
+x86-64 while looking tolerable on aarch64; #135 stops at 64. The compile cost is paid once per (n, T) per
 Julia session unless the package precompiles them with `PrecompileTools`
 (then it is paid once at package install, ~10–30 s for the set above, and
 the package's precompile cache grows by a few MB). This is the structural
