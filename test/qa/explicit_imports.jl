@@ -23,7 +23,7 @@ import ExplicitImports
     # This is an upstream bug in AbstractFFTs.jl
     @test ExplicitImports.check_all_qualified_accesses_are_public(
         FFTA;
-        ignore=(:Plan, :plan_inv, :ScaledPlan, :normalization, :AdjointStyle, :FFTAdjointStyle, :RFFTAdjointStyle, :IRFFTAdjointStyle, :adjoint_mul, :output_size, :require_one_based_indexing, :Fix1, :Cartesian, :peel)
+        ignore=(:Plan, :plan_inv, :ScaledPlan, :normalization, :BinaryPlatforms, :CPUID, :AdjointStyle, :FFTAdjointStyle, :RFFTAdjointStyle, :IRFFTAdjointStyle, :adjoint_mul, :output_size, :require_one_based_indexing, :Fix1, :Cartesian, :peel)
     ) === nothing
 
     # No self-qualified accesses in FFTA (ie. no `... FFTA.func(...)`)
