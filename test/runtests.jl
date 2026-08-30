@@ -51,6 +51,9 @@ Random.seed!(1)
     @testset verbose = true "Twiddle tables" begin
         include("twiddles.jl")
     end
+    @testset "Leaves-first order (large powers of two)" begin
+        include("leaffirst.jl")
+    end
     @testset verbose = true "Argument checking" begin
         include("argument_checking.jl")
     end

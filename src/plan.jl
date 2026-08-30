@@ -21,6 +21,20 @@ struct Worker{T,N,S<:Real}
     buf::Vector{T}    # real<->complex packing scratch, see `_re_buflen` (real plans only)
     rbuf::Vector{S}   # contiguous copy of a strided real pencil, see `_re_pencil_loop!` (real plans only)
     cbuf::Vector{T}   # contiguous copy of a strided complex pencil (real plans only)
+    rtw::Vector{T}    # twiddles of the even-length real pre/post-processing, see `_re_twiddles` (shared)
+    gathers::Vector{Vector{T}}   # every worker's root-node workspace: gather buffers for the threaded leaves-first path
+end
+
+"""
+$(TYPEDSIGNATURES)
+`w_n^j = exp(-2πi j/n)` for `j = 1..n÷4`, the twiddles of the even-length
+real-to-complex post-processing in `_rfft_pencil!` (conjugated in
+`_brfft_pencil!`); empty for odd `n`. Computed once per plan with `cispi`.
+"""
+function _re_twiddles(::Type{T}, n::Int) where {T<:Complex}
+    (n == 0 || isodd(n)) && return T[]
+    R = real(T)
+    return T[T(cispi(-2 * R(j) / R(n))) for j in 1:n÷4]
 end
 
 # A call graph that shares the nodes and twiddle tables but has its own
@@ -38,12 +52,14 @@ function _workers(cg::Tuple{CallGraph{T},Vararg{CallGraph{T}}}, ::Val{N}, num_th
     S = real(T)
     obuflen = maximum(g -> first(g.nodes).sz, cg)
     clen = rlen == 0 ? 0 : rlen ÷ 2 + 1
-    mk(graphs) = Worker{T,N,S}(graphs, Vector{T}(undef, obuflen), Vector{T}(undef, buflen), Vector{S}(undef, rlen), Vector{T}(undef, clen))
-    workers = [mk(cg)]
+    rtw = _re_twiddles(T, rlen)
+    graphs = [cg]
     for _ in 2:num_threads
-        push!(workers, mk(map(_clone_workspace, cg)))
+        push!(graphs, map(_clone_workspace, cg))
     end
-    return workers
+    gathers = [first(g)[1].type === POW2RADIX4_FFT ? first(g).workspace[1] : T[] for g in graphs]
+    mk(graphs) = Worker{T,N,S}(graphs, Vector{T}(undef, obuflen), Vector{T}(undef, buflen), Vector{S}(undef, rlen), Vector{T}(undef, clen), rtw, gathers)
+    return [mk(g) for g in graphs]
 end
 
 # Transforms with fewer elements than this are not split over threads.
@@ -237,7 +253,18 @@ function LinearAlgebra.mul!(y::AbstractVector{U}, p::FFTAPlan_cx{T,1}, x::Abstra
     if size(p) != size(x)
         throw(DimensionMismatch("plan has axes $(size(p)), but input array has axes $(size(x))"))
     end
-    fft_kernel!(y, x, 1, 1, p.dir, p.callgraph[1][1].type, p.callgraph[1], 1)
+    _kernel_1d!(y, x, p.dir, p.callgraph[1], p.workers[1].gathers)
+    return y
+end
+
+# One whole transform: the threaded leaves-first path for large powers of two
+# when the plan has several workers, the kernel otherwise.
+function _kernel_1d!(y::AbstractVector, x::AbstractVector, d::Direction, g::CallGraph{T}, gathers::Vector{Vector{T}}) where {T}
+    if _threaded_1d_ok(g, gathers)
+        _pow2_leaffirst_threaded!(y, x, g[1].sz, 1, 1, 1, d, g.twiddles[1], 0, gathers)
+    else
+        fft_kernel!(y, x, 1, 1, d, g[1].type, g, 1)
+    end
     return y
 end
 
@@ -282,13 +309,13 @@ function _foreach_pencil(f::F, A::AbstractArray{<:Any,N}, ::Val{dim}, workers::V
     total = npre * length(Rpost)
     nt = min(length(workers), total ÷ 2)
     if nt > 1 && total * size(A, dim) >= THREAD_THRESHOLD
-        Base.@sync for c in 1:nt
+        # one chunk per worker, run on Polyester's static thread pool (no task
+        # allocation, the calling thread takes a chunk itself)
+        @batch for c in 1:nt
             lo = (c - 1) * total ÷ nt + 1
             hi = c * total ÷ nt
-            # (the task's worker gets its own name: a variable shared with the
-            # serial branch below would be captured by every task)
             wc = workers[c]
-            Threads.@spawn for k in lo:hi
+            for k in lo:hi
                 ipost, ipre = divrem(k - 1, npre)
                 f(wc, Rpre[ipre + 1], Rpost[ipost + 1])
             end
@@ -495,29 +522,27 @@ function _rfft_pencil!(y::AbstractVector{T}, x::AbstractVector{<:Real}, w::Worke
         # algorithms." IEEE Transactions on acoustics, speech, and signal
         # processing 35, no. 6 (2003): 849-863.
         m = n >> 1
-        @inbounds for j in 1:m
-            buf[j] = T(x[2j - 1], x[2j])
-        end
-        fft_kernel!(view(y, 1:m), buf, 1, 1, FFT_FORWARD, cg[1].type, cg, 1)
+        _pack_pairs!(buf, x, m)
+        _kernel_1d!(view(y, 1:m), buf, FFT_FORWARD, cg, w.gathers)
 
         # Construct the result by first constructing the elements of the
         # real and imaginary part, followed by the usual radix-2 assembly,
-        # see eq (9). The twiddle is for `n`, not `m`, so it is recomputed.
-        z1 = singleton_params(-one(R) / n)
-        wj = cispi(-R(2) / n)
+        # see eq (9). The twiddles are for `n`, not `m`: the plan keeps them
+        # in `rtw` (a recurrence here would be a serial dependency chain).
+        rtw = w.rtw
         @inbounds begin
             y1 = y[1]
             y[1]     = real(y1) + imag(y1)
             y[m + 1] = real(y1) - imag(y1)
-            for j in 2:((m >> 1) + 1)
-                yj  = y[j]
-                ymj = y[m - j + 2]
-                XX = R(0.5) * ( yj + conj(ymj))
-                XY = R(0.5) * (-yj + conj(ymj)) * im
-                y[j]         =      XX + wj * XY
-                y[m - j + 2] = conj(XX - wj * XY)
-                wj = singleton_step(wj, z1)
-            end
+        end
+        _rfft_post_simd!(y, m, rtw) || @inbounds for j in 2:((m >> 1) + 1)
+            yj  = y[j]
+            ymj = y[m - j + 2]
+            wj  = rtw[j - 1]
+            XX = R(0.5) * ( yj + conj(ymj))
+            XY = R(0.5) * (-yj + conj(ymj)) * im
+            y[j]         =      XX + wj * XY
+            y[m - j + 2] = conj(XX - wj * XY)
         end
     else
         # Odd length: run the full transform on the real input (the kernels
@@ -542,23 +567,17 @@ function _brfft_pencil!(x::AbstractVector{<:Real}, y::AbstractVector{T}, w::Work
         m = n >> 1
         tmp = view(buf, 1:m)
         out = view(buf, m + 1:2m)
-        z1 = singleton_params(one(R) / n)
-        wj = cispi(R(2) / n)
-        @inbounds begin
-            tmp[1] = T(real(y[1]) + real(y[m + 1]), real(y[1]) - real(y[m + 1]))
-            for j in 2:((m >> 1) + 1)
-                XX =       y[j] + conj(y[m - j + 2])
-                XY = wj * (y[j] - conj(y[m - j + 2]))
-                tmp[j]         =      XX + im * XY
-                tmp[m - j + 2] = conj(XX - im * XY)
-                wj = singleton_step(wj, z1)
-            end
+        rtw = w.rtw
+        @inbounds tmp[1] = T(real(y[1]) + real(y[m + 1]), real(y[1]) - real(y[m + 1]))
+        _brfft_pre_simd!(tmp, y, m, rtw) || @inbounds for j in 2:((m >> 1) + 1)
+            wj = conj(rtw[j - 1])
+            XX =       y[j] + conj(y[m - j + 2])
+            XY = wj * (y[j] - conj(y[m - j + 2]))
+            tmp[j]         =      XX + im * XY
+            tmp[m - j + 2] = conj(XX - im * XY)
         end
-        fft_kernel!(out, tmp, 1, 1, FFT_BACKWARD, cg[1].type, cg, 1)
-        @inbounds for j in 1:m
-            x[2j - 1] = real(out[j])
-            x[2j]     = imag(out[j])
-        end
+        _kernel_1d!(out, tmp, FFT_BACKWARD, cg, w.gathers)
+        _unpack_pairs!(x, out, m)
     else
         # Odd length: rebuild the conjugate-symmetric spectrum and transform.
         h = n ÷ 2 + 1
@@ -584,8 +603,6 @@ end
 # stride of a cache line or more the kernel is otherwise 1.2–1.3× slower. The
 # test is sufficient rather than exact (a 1×N array's dim-2 pencils are
 # contiguous but still take the copy): a wasted copy, never a wrong answer.
-_unit_stride(v::StridedArray) = stride(v, 1) == 1
-_unit_stride(v) = false
 
 # Apply `kernel!(y_pencil, x_pencil, worker, flen)` along dimension `R` of `x` and `y`.
 function _re_pencil_loop!(kernel!::F, y::AbstractArray{<:Any,N}, x::AbstractArray{<:Any,N}, p::FFTAPlan_re, ::Val{R}) where {F,N,R}
