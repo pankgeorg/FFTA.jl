@@ -42,9 +42,10 @@ struct StockhamChain{S<:Real}
     aim::Vector{S}
     bre::Vector{S}
     bim::Vector{S}
+    nt::Int
 end
 _clone_chain(c::StockhamChain{S}) where {S} =
-    StockhamChain{S}(c.n, c.stages, similar(c.are), similar(c.aim), similar(c.bre), similar(c.bim))
+    StockhamChain{S}(c.n, c.stages, similar(c.are), similar(c.aim), similar(c.bre), similar(c.bim), c.nt)
 
 # host vector register width in bits (scalable extensions such as SVE are
 # not detectable here, so aarch64 assumes 128-bit NEON)
@@ -59,6 +60,60 @@ const _STOCKHAM_VECTOR_BITS = _host_vector_bits()
 
 _stockham_width(::Type{Float64}) = _STOCKHAM_VECTOR_BITS ÷ 64
 _stockham_width(::Type{Float32}) = _STOCKHAM_VECTOR_BITS ÷ 32
+
+# Threading: each stage is one full pass over the planes, split into chunks of
+# its outer index (butterfly index `p`, or W-aligned lane blocks). Chunks write
+# disjoint regions and compute the same expressions, so threaded results are
+# bitwise identical to serial. Only transforms at least this long thread:
+const _STOCKHAM_THREAD_MIN = 1 << 17
+
+"chunk `c` of `nt` over `1:len` (inclusive bounds; empty when `hi < lo`)"
+@inline _srange(c::Int, nt::Int, len::Int) = (div((c - 1) * len, nt) + 1, div(c * len, nt))
+
+# Chunk a (butterfly `p`, lane block) stage: split `p` when there are enough
+# butterflies; otherwise split the W-aligned lane blocks (only safe when the
+# stride has no overlap window, i.e. `s % W == 0`).
+@inline function _spq(c::Int, nt::Int, m::Int, s::Int, W::Int)
+    nb = s < W ? 1 : cld(s, W)
+    if m >= 2 * nt || nb < 2 * nt
+        lo, hi = _srange(c, nt, m)
+        return lo, hi, 1, nb
+    end
+    # every chunk gets >= 2 blocks, so the final overlap window (block `nb`
+    # rewrites lanes of block `nb - 1` with identical values) stays inside
+    # the last chunk
+    qlo, qhi = _srange(c, nt, nb)
+    return 1, m, qlo, qhi
+end
+
+# Sense-reversing barrier for the per-transform task team: one spawn per
+# transform, then one cheap barrier between stages instead of a fork-join
+# per stage. The last arrival resets the count and bumps the generation.
+mutable struct _SBarrier
+    @atomic count::Int
+    @atomic gen::Int
+    const nt::Int
+end
+@inline _swait(::Nothing) = nothing
+@inline function _swait(b::_SBarrier)
+    g = @atomic :acquire b.gen
+    if (@atomic b.count += 1) == b.nt
+        @atomic b.count = 0
+        @atomic :release b.gen = g + 1
+    else
+        spins = 0
+        while (@atomic :acquire b.gen) == g
+            GC.safepoint()
+            ccall(:jl_cpu_pause, Cvoid, ())
+            spins += 1
+            if spins > 10_000   # oversubscribed scheduler: let others run
+                yield()
+                spins = 0
+            end
+        end
+    end
+    return nothing
+end
 
 "is `n` a product of 2 and `STOCKHAM_RADICES`?"
 function _stockham_smooth(n::Int)
@@ -80,12 +135,16 @@ function _use_stockham(::Type{T}, N::Int, num_threads::Int) where {T}
     N >= 32 || return false
     _stockham_smooth(N) || return false
     if ispow2(N)
-        # ComplexF64 powers of two: the radix-4 kernel with the leaves-first
-        # order is faster. ComplexF32 below LEAFFIRST_MIN: this engine wins
-        # (twice the lanes); at or above it the threaded leaves-first path
-        # applies and results must not depend on `num_threads`.
-        T === ComplexF32 || return false
-        N >= LEAFFIRST_MIN && return false
+        # ComplexF32 below LEAFFIRST_MIN: this engine wins (twice the lanes).
+        # ComplexF64: the radix-4 leaves-first kernel is faster serial and
+        # threads at ≥ LEAFFIRST_MIN, except 2^17 where the threaded stage
+        # engine wins in both modes. Size-only routing keeps results
+        # independent of `num_threads`.
+        if T === ComplexF32
+            N >= LEAFFIRST_MIN && return false
+        else
+            (N >= _STOCKHAM_THREAD_MIN && N < LEAFFIRST_MIN) || return false
+        end
     end
     return true
 end
@@ -133,11 +192,11 @@ function _stockham_stages_cached(::Type{S}, n::Int, D::Int) where {S<:Real}
     return r::Vector{StockhamStage{S}}
 end
 
-function StockhamChain{S}(n::Int, dir::Direction) where {S<:Real}
+function StockhamChain{S}(n::Int, dir::Direction, nt::Int=1) where {S<:Real}
     stages = _stockham_stages_cached(S, n, direction_sign(dir))
     return StockhamChain{S}(n, stages,
                             Vector{S}(undef, n), Vector{S}(undef, n),
-                            Vector{S}(undef, n), Vector{S}(undef, n))
+                            Vector{S}(undef, n), Vector{S}(undef, n), max(nt, 1))
 end
 
 function _stockham_build_stages(::Type{S}, n::Int, D::Int) where {S<:Real}
@@ -301,18 +360,20 @@ end
 # multiples of W: recomputed lanes store identical values)
 # ---------------------------------------------------------------------------
 function _stage4!(yre::Vector{S}, yim::Vector{S}, xre::Vector{S}, xim::Vector{S},
-                  n::Int, s::Int, tw::StockhamStage{S}, ::Val{D}) where {S,D}
+                  n::Int, s::Int, tw::StockhamStage{S}, ::Val{D}, lo::Int, hi::Int,
+                  qlo::Int=1, qhi::Int=(s < _stockham_width(S) ? 1 : cld(s, _stockham_width(S)))) where {S,D}
     W = _stockham_width(S)
     if tw.small
-        s == 1 && return _stage4_small!(yre, yim, xre, xim, n, Val(1), tw, Val(D))
-        s == 2 && return _stage4_small!(yre, yim, xre, xim, n, Val(2), tw, Val(D))
-        return _stage4_small!(yre, yim, xre, xim, n, Val(4), tw, Val(D))
+        # `lo:hi` are W-blocks of the lane-expanded twiddle layout here
+        s == 1 && return _stage4_small!(yre, yim, xre, xim, n, Val(1), tw, Val(D), lo, hi)
+        s == 2 && return _stage4_small!(yre, yim, xre, xim, n, Val(2), tw, Val(D), lo, hi)
+        return _stage4_small!(yre, yim, xre, xim, n, Val(4), tw, Val(D), lo, hi)
     end
     m = n >> 2
     ms = m * s
     twr = tw.twr; twi = tw.twi
     if s < W
-        @inbounds for p in 0:m-1
+        @inbounds for p in lo-1:hi-1
             w1r = twr[3p+1]; w1i = twi[3p+1]; w2r = twr[3p+2]; w2i = twi[3p+2]; w3r = twr[3p+3]; w3i = twi[3p+3]
             xb = s * p; yb = 4s * p
             for q in 1:s
@@ -331,10 +392,11 @@ function _stage4!(yre::Vector{S}, yim::Vector{S}, xre::Vector{S}, xim::Vector{S}
         return nothing
     end
     V = Vec{W,S}
-    @inbounds for p in 0:m-1
+    @inbounds for p in lo-1:hi-1
         w1r = V(twr[3p+1]); w1i = V(twi[3p+1]); w2r = V(twr[3p+2]); w2i = V(twi[3p+2]); w3r = V(twr[3p+3]); w3i = V(twi[3p+3])
         xb = s * p; yb = 4s * p
-        for q0 in 1:W:s
+        for b in qlo:qhi
+            q0 = (b - 1) * W + 1
             q = q0 + W - 1 <= s ? q0 : s - W + 1
             ar = vload(V, xre, xb + q);        ai = vload(V, xim, xb + q)
             br = vload(V, xre, xb + ms + q);   bi = vload(V, xim, xb + ms + q)
@@ -353,13 +415,14 @@ function _stage4!(yre::Vector{S}, yim::Vector{S}, xre::Vector{S}, xim::Vector{S}
     return nothing
 end
 
-function _stage4_small!(yre::Vector{S}, yim::Vector{S}, xre, xim, n::Int, ::Val{G}, tw::StockhamStage{S}, ::Val{D}) where {S,G,D}
+function _stage4_small!(yre::Vector{S}, yim::Vector{S}, xre, xim, n::Int, ::Val{G}, tw::StockhamStage{S}, ::Val{D}, lo::Int, hi::Int) where {S,G,D}
     W = _stockham_width(S)
     m = n >> 2
     ms = m * G
     twr = tw.twr; twi = tw.twi
     V = Vec{W,S}
-    @inbounds for f in 1:W:ms
+    @inbounds for b in lo:hi
+        f = (b - 1) * W + 1
         w1r = vload(V, twr, f);       w1i = vload(V, twi, f)
         w2r = vload(V, twr, ms + f);  w2i = vload(V, twi, ms + f)
         w3r = vload(V, twr, 2ms + f); w3i = vload(V, twi, 2ms + f)
@@ -382,7 +445,7 @@ function _stage4_small!(yre::Vector{S}, yim::Vector{S}, xre, xim, n::Int, ::Val{
     return nothing
 end
 
-function _stage2!(yre::Vector{S}, yim::Vector{S}, xre, xim, s::Int) where {S}
+function _stage2!(yre::Vector{S}, yim::Vector{S}, xre, xim, s::Int, lo::Int, hi::Int) where {S}
     W = _stockham_width(S)
     if s < W
         @inbounds for q in 1:s
@@ -393,7 +456,8 @@ function _stage2!(yre::Vector{S}, yim::Vector{S}, xre, xim, s::Int) where {S}
         return nothing
     end
     V = Vec{W,S}
-    @inbounds for q0 in 1:W:s
+    @inbounds for b in lo:hi
+        q0 = (b - 1) * W + 1
         q = q0 + W - 1 <= s ? q0 : s - W + 1
         ar = vload(V, xre, q); ai = vload(V, xim, q)
         br = vload(V, xre, s + q); bi = vload(V, xim, s + q)
@@ -410,7 +474,7 @@ end
         return (c * (o[3] - o[4]), c * (o[4] + o[3]), -o[6], o[5], -c * (o[7] + o[8]), c * (o[7] - o[8]))
     end
 end
-function _stage8!(yre::Vector{S}, yim::Vector{S}, xre, xim, s::Int, ::Val{D}) where {S,D}
+function _stage8!(yre::Vector{S}, yim::Vector{S}, xre, xim, s::Int, ::Val{D}, lo::Int, hi::Int) where {S,D}
     W = _stockham_width(S)
     if s < W
         c = S(sqrt(0.5))
@@ -431,7 +495,8 @@ function _stage8!(yre::Vector{S}, yim::Vector{S}, xre, xim, s::Int, ::Val{D}) wh
     end
     V = Vec{W,S}
     c = V(S(sqrt(0.5)))
-    @inbounds for q0 in 1:W:s
+    @inbounds for b in lo:hi
+        q0 = (b - 1) * W + 1
         q = q0 + W - 1 <= s ? q0 : s - W + 1
         e = _sbf4(vload(V, xre, q), vload(V, xim, q), vload(V, xre, 2s + q), vload(V, xim, 2s + q),
                   vload(V, xre, 4s + q), vload(V, xim, 4s + q), vload(V, xre, 6s + q), vload(V, xim, 6s + q), Val(D))
@@ -451,7 +516,8 @@ function _stage8!(yre::Vector{S}, yim::Vector{S}, xre, xim, s::Int, ::Val{D}) wh
 end
 
 function _stagep!(yre::Vector{S}, yim::Vector{S}, xre, xim, n::Int, s::Int,
-                  tw::StockhamStage{S}, ::Val{P}, ::Val{D}) where {S,P,D}
+                  tw::StockhamStage{S}, ::Val{P}, ::Val{D}, lo::Int, hi::Int,
+                  qlo::Int=1, qhi::Int=(s < _stockham_width(S) ? 1 : cld(s, _stockham_width(S)))) where {S,P,D}
     m = n ÷ P
     ms = m * s
     twr = tw.twr; twi = tw.twi
@@ -461,12 +527,12 @@ function _stagep!(yre::Vector{S}, yim::Vector{S}, xre, xim, n::Int, s::Int,
         V = Vec{W,S}
         ccv = _svbroad(V, cc)
         ssv = _svbroad(V, ss)
-        @inbounds for p in 0:m-1
+        @inbounds for p in lo-1:hi-1
             wr = ntuple(j -> V(@inbounds twr[(P-1)*p+j]), Val(P - 1))
             wi = ntuple(j -> V(@inbounds twi[(P-1)*p+j]), Val(P - 1))
             xb = s * p; yb = P * s * p
-            q = 1
-            while q <= s
+            for b in qlo:qhi
+                q = (b - 1) * W + 1
                 qq = q + W - 1 <= s ? q : s - W + 1
                 xsr = ntuple(j -> @inbounds(vload(V, xre, xb + (j - 1) * ms + qq)), Val(P))
                 xsi = ntuple(j -> @inbounds(vload(V, xim, xb + (j - 1) * ms + qq)), Val(P))
@@ -474,11 +540,10 @@ function _stagep!(yre::Vector{S}, yim::Vector{S}, xre, xim, n::Int, s::Int,
                 vstore(ys[1], yre, yb + qq)
                 vstore(ys[2], yim, yb + qq)
                 _sodd_store!(yre, yim, ys, wr, wi, yb, s, qq)
-                q += W
             end
         end
     else
-        @inbounds for p in 0:m-1
+        @inbounds for p in lo-1:hi-1
             wr = ntuple(j -> @inbounds(twr[(P-1)*p+j]), Val(P - 1))
             wi = ntuple(j -> @inbounds(twi[(P-1)*p+j]), Val(P - 1))
             xb = s * p; yb = P * s * p
@@ -502,7 +567,7 @@ end
 # can write interleaved complex output — each saves one full conversion pass.
 # ---------------------------------------------------------------------------
 function _stage4_first_fused!(yre::Vector{S}, yim::Vector{S}, x::Vector{Complex{S}}, start_in::Int,
-                              n::Int, tw::StockhamStage{S}, ::Val{D}) where {S,D}
+                              n::Int, tw::StockhamStage{S}, ::Val{D}, lo::Int, hi::Int) where {S,D}
     W = _stockham_width(S)
     m = n >> 2
     twr = tw.twr; twi = tw.twi
@@ -510,7 +575,8 @@ function _stage4_first_fused!(yre::Vector{S}, yim::Vector{S}, x::Vector{Complex{
     sz = sizeof(S)
     GC.@preserve x begin
         px = Ptr{S}(pointer(x)) + 2sz * (start_in - 1)
-        @inbounds for f in 1:W:m
+        @inbounds for b in lo:hi
+            f = (b - 1) * W + 1
             b0 = 2 * (f - 1)
             u = vload(V, px + sz * b0);            v = vload(V, px + sz * (b0 + W))
             ar, ai = _sdeint2(u, v)
@@ -541,13 +607,14 @@ end
 
 # twiddle-free final stages writing interleaved complex output
 function _stage4_last_fused!(y::Vector{Complex{S}}, start_out::Int, xre::Vector{S}, xim::Vector{S},
-                             s::Int, ::Val{D}) where {S,D}
+                             s::Int, ::Val{D}, lo::Int, hi::Int) where {S,D}
     W = _stockham_width(S)
     V = Vec{W,S}
     sz = sizeof(S)
     GC.@preserve y begin
         py = Ptr{S}(pointer(y)) + 2sz * (start_out - 1)
-        @inbounds for q0 in 1:W:s
+        @inbounds for b in lo:hi
+            q0 = (b - 1) * W + 1
             q = q0 + W - 1 <= s ? q0 : s - W + 1
             e = _sbf4(vload(V, xre, q), vload(V, xim, q), vload(V, xre, s + q), vload(V, xim, s + q),
                       vload(V, xre, 2s + q), vload(V, xim, 2s + q), vload(V, xre, 3s + q), vload(V, xim, 3s + q), Val(D))
@@ -562,14 +629,15 @@ function _stage4_last_fused!(y::Vector{Complex{S}}, start_out::Int, xre::Vector{
     return nothing
 end
 function _stage8_last_fused!(y::Vector{Complex{S}}, start_out::Int, xre::Vector{S}, xim::Vector{S},
-                             s::Int, ::Val{D}) where {S,D}
+                             s::Int, ::Val{D}, lo::Int, hi::Int) where {S,D}
     W = _stockham_width(S)
     V = Vec{W,S}
     c = V(S(sqrt(0.5)))
     sz = sizeof(S)
     GC.@preserve y begin
         py = Ptr{S}(pointer(y)) + 2sz * (start_out - 1)
-        @inbounds for q0 in 1:W:s
+        @inbounds for b in lo:hi
+            q0 = (b - 1) * W + 1
             q = q0 + W - 1 <= s ? q0 : s - W + 1
             e = _sbf4(vload(V, xre, q), vload(V, xim, q), vload(V, xre, 2s + q), vload(V, xim, 2s + q),
                       vload(V, xre, 4s + q), vload(V, xim, 4s + q), vload(V, xre, 6s + q), vload(V, xim, 6s + q), Val(D))
@@ -588,13 +656,14 @@ function _stage8_last_fused!(y::Vector{Complex{S}}, start_out::Int, xre::Vector{
     end
     return nothing
 end
-function _stage2_last_fused!(y::Vector{Complex{S}}, start_out::Int, xre::Vector{S}, xim::Vector{S}, s::Int) where {S}
+function _stage2_last_fused!(y::Vector{Complex{S}}, start_out::Int, xre::Vector{S}, xim::Vector{S}, s::Int, lo::Int, hi::Int) where {S}
     W = _stockham_width(S)
     V = Vec{W,S}
     sz = sizeof(S)
     GC.@preserve y begin
         py = Ptr{S}(pointer(y)) + 2sz * (start_out - 1)
-        @inbounds for q0 in 1:W:s
+        @inbounds for b in lo:hi
+            q0 = (b - 1) * W + 1
             q = q0 + W - 1 <= s ? q0 : s - W + 1
             ar = vload(V, xre, q); ai = vload(V, xim, q)
             br = vload(V, xre, s + q); bi = vload(V, xim, s + q)
@@ -657,15 +726,72 @@ function _sint_all!(y::AbstractVector{Complex{S}}, start_out::Int, are::Vector{S
     return nothing
 end
 
+function _sdeint_blocks!(are::Vector{S}, aim::Vector{S}, x::Vector{Complex{S}}, start_in::Int,
+                         n::Int, lo::Int, hi::Int) where {S}
+    W = _stockham_width(S)
+    sz = sizeof(S)
+    V = Vec{W,S}
+    GC.@preserve x begin
+        px = Ptr{S}(pointer(x)) + 2sz * (start_in - 1)
+        @inbounds for b in lo:hi
+            c0 = (b - 1) * W + 1
+            c = c0 + W - 1 <= n ? c0 : n - W + 1
+            u = vload(V, px + sz * 2 * (c - 1))
+            v = vload(V, px + sz * (2 * (c - 1) + W))
+            r, i = _sdeint2(u, v)
+            vstore(r, are, c)
+            vstore(i, aim, c)
+        end
+    end
+    return nothing
+end
+function _sint_blocks!(y::Vector{Complex{S}}, start_out::Int, are::Vector{S}, aim::Vector{S},
+                       n::Int, lo::Int, hi::Int) where {S}
+    W = _stockham_width(S)
+    sz = sizeof(S)
+    V = Vec{W,S}
+    GC.@preserve y begin
+        py = Ptr{S}(pointer(y)) + 2sz * (start_out - 1)
+        @inbounds for b in lo:hi
+            c0 = (b - 1) * W + 1
+            c = c0 + W - 1 <= n ? c0 : n - W + 1
+            r = vload(V, are, c)
+            i = vload(V, aim, c)
+            l, h = _sint2(r, i)
+            vstore(l, py + sz * 2 * (c - 1))
+            vstore(h, py + sz * (2 * (c - 1) + W))
+        end
+    end
+    return nothing
+end
+
 """
 $(TYPEDSIGNATURES)
 Run the chain: `out[start_out .+ (0:n-1)] = FFT(in[start_in .+ (0:n-1)])`.
-The input may be real or complex; unit stride.
+The input may be real or complex; unit stride. With `ch.nt > 1` and
+`n >= _STOCKHAM_THREAD_MIN`, a task team runs every stage in W-aligned
+chunks with a barrier between stages — results are bitwise identical to
+the serial order.
 """
 function _stockham_exec!(out::AbstractVector{Complex{S}}, in::AbstractVector, start_out::Int, start_in::Int,
                          d::Direction, ch::StockhamChain{S}) where {S}
-    n = ch.n
     D = direction_sign(d)
+    nt = (ch.nt > 1 && ch.n >= _STOCKHAM_THREAD_MIN) ? min(ch.nt, Threads.nthreads()) : 1
+    if nt == 1
+        _stockham_run!(out, in, start_out, start_in, D, ch, 1, 1, nothing)
+    else
+        bar = _SBarrier(0, 0, nt)
+        Base.@sync for c in 1:nt
+            Threads.@spawn _stockham_run!(out, in, start_out, start_in, D, ch, c, nt, bar)
+        end
+    end
+    return nothing
+end
+
+function _stockham_run!(out::AbstractVector{Complex{S}}, in::AbstractVector, start_out::Int, start_in::Int,
+                        D::Int, ch::StockhamChain{S}, c::Int, nt::Int,
+                        bar::Union{Nothing,_SBarrier}) where {S}
+    n = ch.n
     W = _stockham_width(S)
     xr, xi, yr, yi = ch.are, ch.aim, ch.bre, ch.bim
     nstages = length(ch.stages)
@@ -677,58 +803,93 @@ function _stockham_exec!(out::AbstractVector{Complex{S}}, in::AbstractVector, st
     last_fused = out isa Vector{Complex{S}} && nstages > 1 &&
                  (laststage.R == 2 || laststage.R == 4 || laststage.R == 8) &&
                  !laststage.small && n ÷ laststage.R >= W
+    Vd = D == -1 ? Val(-1) : Val(1)
     s = 1
     ncur = n
     if first_fused
-        _stage4_first_fused!(yr, yi, in::Vector{Complex{S}}, start_in, n, ch.stages[1], D == -1 ? Val(-1) : Val(1))
+        lo, hi = _srange(c, nt, (n >> 2) ÷ W)
+        hi >= lo && _stage4_first_fused!(yr, yi, in::Vector{Complex{S}}, start_in, n, ch.stages[1], Vd, lo, hi)
+        _swait(bar)
         s = 4
         ncur >>= 2
         xr, xi, yr, yi = yr, yi, xr, xi
     elseif in isa AbstractVector{Complex{S}}
-        _sdeint_all!(xr, xi, in, start_in, n)
-    else
-        @inbounds for c in 1:n
-            xr[c] = S(real(in[start_in+c-1]))
-            xi[c] = S(imag(in[start_in+c-1]))
+        if in isa Vector{Complex{S}} && n >= W && (n % W == 0 || cld(n, W) >= 2 * nt)
+            lo, hi = _srange(c, nt, cld(n, W))
+            hi >= lo && _sdeint_blocks!(xr, xi, in, start_in, n, lo, hi)
+        elseif c == 1
+            _sdeint_all!(xr, xi, in, start_in, n)
         end
+        _swait(bar)
+    else
+        lo, hi = _srange(c, nt, n)
+        @inbounds for e in lo:hi
+            xr[e] = S(real(in[start_in+e-1]))
+            xi[e] = S(imag(in[start_in+e-1]))
+        end
+        _swait(bar)
     end
-    @inbounds for k in (first_fused ? 2 : 1):(last_fused ? nstages - 1 : nstages)
+    for k in (first_fused ? 2 : 1):(last_fused ? nstages - 1 : nstages)
         tw = ch.stages[k]
         R = tw.R
         if R == 4
-            _stage4!(yr, yi, xr, xi, ncur, s, tw, D == -1 ? Val(-1) : Val(1))
+            if tw.small
+                lo, hi = _srange(c, nt, ((ncur >> 2) * s) ÷ W)
+                hi >= lo && _stage4!(yr, yi, xr, xi, ncur, s, tw, Vd, lo, hi)
+            else
+                lo, hi, qlo, qhi = _spq(c, nt, ncur >> 2, s, W)
+                hi >= lo && qhi >= qlo && _stage4!(yr, yi, xr, xi, ncur, s, tw, Vd, lo, hi, qlo, qhi)
+            end
         elseif R == 2
-            _stage2!(yr, yi, xr, xi, s)
+            nb = s < W ? 1 : cld(s, W)
+            lo, hi = (s >= W && (s % W == 0 || nb >= 2 * nt)) ? _srange(c, nt, nb) : (c == 1 ? (1, nb) : (1, 0))
+            hi >= lo && _stage2!(yr, yi, xr, xi, s, lo, hi)
         elseif R == 8
-            _stage8!(yr, yi, xr, xi, s, D == -1 ? Val(-1) : Val(1))
+            nb = s < W ? 1 : cld(s, W)
+            lo, hi = (s >= W && (s % W == 0 || nb >= 2 * nt)) ? _srange(c, nt, nb) : (c == 1 ? (1, nb) : (1, 0))
+            hi >= lo && _stage8!(yr, yi, xr, xi, s, Vd, lo, hi)
         elseif R == 3
-            _stagep_dir!(yr, yi, xr, xi, ncur, s, tw, Val(3), D)
+            lo, hi, qlo, qhi = _spq(c, nt, ncur ÷ 3, s, W)
+            hi >= lo && qhi >= qlo && _stagep_dir!(yr, yi, xr, xi, ncur, s, tw, Val(3), D, lo, hi, qlo, qhi)
         elseif R == 5
-            _stagep_dir!(yr, yi, xr, xi, ncur, s, tw, Val(5), D)
+            lo, hi, qlo, qhi = _spq(c, nt, ncur ÷ 5, s, W)
+            hi >= lo && qhi >= qlo && _stagep_dir!(yr, yi, xr, xi, ncur, s, tw, Val(5), D, lo, hi, qlo, qhi)
         elseif R == 7
-            _stagep_dir!(yr, yi, xr, xi, ncur, s, tw, Val(7), D)
+            lo, hi, qlo, qhi = _spq(c, nt, ncur ÷ 7, s, W)
+            hi >= lo && qhi >= qlo && _stagep_dir!(yr, yi, xr, xi, ncur, s, tw, Val(7), D, lo, hi, qlo, qhi)
         elseif R == 11
-            _stagep_dir!(yr, yi, xr, xi, ncur, s, tw, Val(11), D)
+            lo, hi, qlo, qhi = _spq(c, nt, ncur ÷ 11, s, W)
+            hi >= lo && qhi >= qlo && _stagep_dir!(yr, yi, xr, xi, ncur, s, tw, Val(11), D, lo, hi, qlo, qhi)
         else
-            _stagep_dir!(yr, yi, xr, xi, ncur, s, tw, Val(13), D)
+            lo, hi, qlo, qhi = _spq(c, nt, ncur ÷ 13, s, W)
+            hi >= lo && qhi >= qlo && _stagep_dir!(yr, yi, xr, xi, ncur, s, tw, Val(13), D, lo, hi, qlo, qhi)
         end
+        _swait(bar)
         s *= R
         ncur ÷= R
         xr, xi, yr, yi = yr, yi, xr, xi
     end
     if last_fused
         yv = out::Vector{Complex{S}}
-        if laststage.R == 4
-            _stage4_last_fused!(yv, start_out, xr, xi, s, D == -1 ? Val(-1) : Val(1))
-        elseif laststage.R == 8
-            _stage8_last_fused!(yv, start_out, xr, xi, s, D == -1 ? Val(-1) : Val(1))
-        else
-            _stage2_last_fused!(yv, start_out, xr, xi, s)
+        nb = cld(s, W)
+        lo, hi = (s % W == 0 || nb >= 2 * nt) ? _srange(c, nt, nb) : (c == 1 ? (1, nb) : (1, 0))
+        if hi >= lo
+            if laststage.R == 4
+                _stage4_last_fused!(yv, start_out, xr, xi, s, Vd, lo, hi)
+            elseif laststage.R == 8
+                _stage8_last_fused!(yv, start_out, xr, xi, s, Vd, lo, hi)
+            else
+                _stage2_last_fused!(yv, start_out, xr, xi, s, lo, hi)
+            end
         end
-    else
+    elseif out isa Vector{Complex{S}} && n >= W && (n % W == 0 || cld(n, W) >= 2 * nt)
+        lo, hi = _srange(c, nt, cld(n, W))
+        hi >= lo && _sint_blocks!(out, start_out, xr, xi, n, lo, hi)
+    elseif c == 1
         _sint_all!(out, start_out, xr, xi, n)
     end
     return nothing
 end
-@inline _stagep_dir!(yr, yi, xr, xi, n, s, tw, vp, D) =
-    D == -1 ? _stagep!(yr, yi, xr, xi, n, s, tw, vp, Val(-1)) : _stagep!(yr, yi, xr, xi, n, s, tw, vp, Val(1))
+@inline _stagep_dir!(yr, yi, xr, xi, n, s, tw, vp, D, lo, hi, qlo, qhi) =
+    D == -1 ? _stagep!(yr, yi, xr, xi, n, s, tw, vp, Val(-1), lo, hi, qlo, qhi) :
+    _stagep!(yr, yi, xr, xi, n, s, tw, vp, Val(1), lo, hi, qlo, qhi)

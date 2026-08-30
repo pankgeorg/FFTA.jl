@@ -441,10 +441,10 @@ function _bluestein_parts(::Type{T}, N::Int, d::Direction) where {T<:Complex}
     return r::Tuple{Int,Vector{T},Vector{T}}
 end
 
-function BluesteinScratch{T}(N::Int, d::Direction) where {T<:Complex}
+function BluesteinScratch{T}(N::Int, d::Direction; num_threads::Int=1) where {T<:Complex}
     pad_len, chirp, chirp_fft = _bluestein_parts(T, N, d)
     # the padded length is smooth, so its graph has no Bluestein node
-    graph = CallGraph{T}(pad_len, 2, FFT_FORWARD)
+    graph = CallGraph{T}(pad_len, 2, FFT_FORWARD; num_threads)
     return BluesteinScratch{T,CallGraph{T}}(N, pad_len, chirp, chirp_fft,
                                             Vector{T}(undef, pad_len), Vector{T}(undef, pad_len), graph)
 end
@@ -458,7 +458,7 @@ function CallGraph{T}(N::Int, BLUESTEIN_CUTOFF::Int, dir::Direction=FFT_FORWARD;
     if _use_stockham(T, N, num_threads)
         node = CallGraphNode(0, 0, STOCKHAM, N, 1, 1)
         return CallGraph{T}([node], [T[]], [T[]], BluesteinScratch{T,CallGraph{T}}[], [0],
-                            dir, BLUESTEIN_CUTOFF, StockhamChain{real(T)}(N, dir))
+                            dir, BLUESTEIN_CUTOFF, StockhamChain{real(T)}(N, dir, num_threads))
     end
     nodes = CallGraphNode[]
     workspace = Vector{Vector{T}}()
@@ -468,7 +468,7 @@ function CallGraph{T}(N::Int, BLUESTEIN_CUTOFF::Int, dir::Direction=FFT_FORWARD;
     blue_index = zeros(Int, length(nodes))
     for (idx, node) in enumerate(nodes)
         if node.type === BLUESTEIN
-            push!(bluestein, BluesteinScratch{T}(node.sz, dir))
+            push!(bluestein, BluesteinScratch{T}(node.sz, dir; num_threads))
             blue_index[idx] = length(bluestein)
         end
     end
