@@ -6,6 +6,7 @@ using LinearAlgebra: LinearAlgebra
 using MuladdMacro: @muladd
 using Primes: Primes
 using Reexport: @reexport
+using SIMD: Vec, vload, vstore, shufflevector
 
 @reexport using AbstractFFTs
 
@@ -13,6 +14,7 @@ include("callgraph.jl")
 include("singleton_twiddle.jl")
 include("codelets.jl")
 include("algos.jl")
+include("real_simd.jl")
 include("plan.jl")
 
 # Compile the codelets (and the common plan/execute paths) at precompile time
