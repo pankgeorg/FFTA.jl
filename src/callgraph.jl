@@ -361,39 +361,43 @@ end
 """
 $(TYPEDSIGNATURES)
 Length of the padded convolution in Bluestein's algorithm for a length-`N`
-transform: the smallest power of two ≥ 2N-1, unless a 3-smooth length
-`2^a 3^b ≥ 2N-1` is enough smaller to be cheaper.
-
-How much cheaper it has to be is machine dependent. Measured per `n log n`
-against a power of two (ComplexF64, planned execution), a length with
-factors of 3 costs 1.3–2.3× on aarch64 NEON (Neoverse-N1) but 2.0–3.1× on
-x86-64 AVX2 (Core Ultra 7 165H); with a threshold of 1.9 the 3-smooth pad
-was a 1.58× win at N = 8443 on aarch64 and a 1.19× loss on x86-64. The
-threshold (`factor`) is therefore set to 2.1, at which the chooser never
-loses on either machine — which, since the smallest admissible length is
-always more than half the power of two, means it currently never picks a
-3-smooth length: the mechanism is kept (and the constant should be
-lowered) for when the composite/radix-3 path becomes competitive with the
-radix-4 kernel. Below 2048 the fixed overhead of the composite step
-dominates and the power of two is always used.
+transform of element type `T`. For the SIMD element types the pad is chosen
+among 13-smooth odd·2^k candidates by a per-element stage-cost model
+calibrated against measured execution of the Stockham engine (weights per
+odd radix; a radix-4 pair costs 1); for other element types it stays the
+smallest power of two ≥ 2N-1 (the generic kernels handle it best).
 """
-function bluestein_pad_length(N::Int; factor::Real = BLUESTEIN_SMOOTH_FACTOR)
+function bluestein_pad_length(::Type{T}, N::Int) where {T}
     m = 2N - 1
-    p = nextpow(2, m)
-    best = p
-    best_cost = p * log2(p)
-    pow3 = 3
-    while pow3 < p
-        c = pow3 * nextpow(2, cld(m, pow3))   # smallest 2^a·3^b with this power of 3
-        cost = factor * c * log2(c)
-        if c >= max(m, 2048) && cost < best_cost
+    T <: CodeletEltype || return nextpow(2, m)
+    best = nextpow(2, m)
+    best_cost = _pad_cost(best)
+    for odd in (3, 5, 7, 9, 11, 13, 15, 21, 25, 27, 33, 35, 39, 45, 63)
+        c = odd << max(5, 8 * sizeof(Int) - leading_zeros(max(cld(m, odd) - 1, 1)))
+        c >= m || continue
+        cost = _pad_cost(c)
+        if cost < best_cost
             best, best_cost = c, cost
         end
-        pow3 *= 3
     end
     return best
 end
+bluestein_pad_length(N::Int; kwargs...) = bluestein_pad_length(ComplexF64, N)   # compatibility
 
+# per-element stage weights (relative to one radix-4 pair of levels)
+function _pad_cost(c::Int)
+    a = trailing_zeros(c)
+    o = c >> a
+    tot = a / 2
+    for (p, w) in ((3, 1.0), (5, 1.6), (7, 2.0), (11, 3.2), (13, 3.6))
+        while o % p == 0
+            o ÷= p
+            tot += w
+        end
+    end
+    o == 1 || return Inf
+    return c * tot
+end
 """
 $(TYPEDSIGNATURES)
 Precompute the chirp, its transform, the work arrays and the call graph of the
@@ -401,7 +405,7 @@ padded transform used by `fft_bluestein!` for a length-`N` transform in
 direction `d`.
 """
 function BluesteinScratch{T}(N::Int, d::Direction) where {T<:Complex}
-    pad_len = bluestein_pad_length(N)
+    pad_len = bluestein_pad_length(T, N)
     R = real(T)
 
     # chirp b_n = exp(sgn · iπ n²/N); n² is tracked modulo 2N so that the

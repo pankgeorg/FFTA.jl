@@ -108,17 +108,17 @@ end
         m = FFTA.bluestein_pad_length(N)
         @test m >= 2N - 1
         f = FFTA.Primes.factor(Dict, m)
-        @test all(p -> p in (2, 3), keys(f))
+        @test all(p -> p in FFTA.STOCKHAM_RADICES || p == 2, keys(f))
     end
-    @test FFTA.bluestein_pad_length(73) == 256       # small: always a power of two
-    @test FFTA.bluestein_pad_length(1009) == 2048
-    # with the conservative threshold these keep the power of two
-    @test FFTA.bluestein_pad_length(4099) == 16384
-    @test FFTA.bluestein_pad_length(8443) == 32768
-    @test FFTA.bluestein_pad_length(65537) == 262144
-    # the mechanism, with a factor at which 3-smooth lengths are worth it
-    @test FFTA.bluestein_pad_length(2200; factor = 1.5) == 4608     # 2^9·3^2 (2·3^7 = 4374 < 2N-1) vs 8192
-    @test FFTA.bluestein_pad_length(8443; factor = 1.5) == 17496
+    # the cost model picks odd·2^k pads where the Stockham engine is cheaper
+    @test FFTA.bluestein_pad_length(73) == 160        # 5·2^5
+    @test FFTA.bluestein_pad_length(1009) == 2048     # power of two still wins here
+    @test FFTA.bluestein_pad_length(4099) == 9216     # 9·2^10
+    @test FFTA.bluestein_pad_length(8443) == 18432    # 9·2^11
+    @test FFTA.bluestein_pad_length(65537) == 147456  # 9·2^14
+    # generic element types keep the power of two (no Stockham engine)
+    @test FFTA.bluestein_pad_length(Complex{BigFloat}, 4099) == 16384
+    @test FFTA.bluestein_pad_length(8443) == 18432       # 9·2^11
     @test FFTA.bluestein_pad_length(73; factor = 1.0) == 256          # below the 2048 floor
 end
 
