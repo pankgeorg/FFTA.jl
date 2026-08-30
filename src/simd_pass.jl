@@ -15,9 +15,6 @@
 # dense vector or contiguous view) and `N ÷ 4 >= W`; otherwise the scalar loop
 # in `fft_pow2_radix4!` runs. Results agree with the scalar loop to rounding.
 
-_simd_width(::Type{ComplexF64}) = 2
-_simd_width(::Type{ComplexF32}) = 4
-
 # (ai, ar) from (ar, ai) for every complex lane
 @inline _swap(v::Vec{L}) where {L} = shufflevector(v, Val(ntuple(i -> isodd(i) ? i : i - 2, L)))
 # a * w with wr = (re w, re w, ...) and wi = (-im w, im w, ...)
