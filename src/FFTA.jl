@@ -18,6 +18,7 @@ include("odd_codelets.jl")
 include("simd_pass.jl")
 include("leaffirst.jl")
 include("algos.jl")
+include("real_simd.jl")
 include("plan.jl")
 
 # Compile the codelets (and the common plan/execute paths) at precompile time
