@@ -4,6 +4,7 @@ using AbstractFFTs: AbstractFFTs
 using DocStringExtensions: TYPEDEF, TYPEDSIGNATURES
 using LinearAlgebra: LinearAlgebra
 using MuladdMacro: @muladd
+using Polyester: @batch
 using Primes: Primes
 using Reexport: @reexport
 
