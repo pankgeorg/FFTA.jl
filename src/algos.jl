@@ -9,7 +9,9 @@ function fft_kernel!(
     if d !== g.dir
         throw(ArgumentError("call graph was planned for direction $(g.dir), not $d"))
     end
-    if t === COMPOSITE_FFT
+    if t === STOCKHAM
+        _stockham_exec!(out, in, start_out, start_in, d, g.stockham::StockhamChain{real(T)})
+    elseif t === COMPOSITE_FFT
         fft_composite!(out, in, start_out, start_in, d, g, idx)
     else
         root = g[idx]

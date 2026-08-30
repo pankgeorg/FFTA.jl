@@ -1,6 +1,6 @@
 @enum Direction FFT_FORWARD=-1 FFT_BACKWARD=1
 @enum Pow24 POW2 POW4
-@enum FFTEnum COMPOSITE_FFT DFT POW3_FFT POW2RADIX4_FFT BLUESTEIN POW5_FFT POW7_FFT
+@enum FFTEnum COMPOSITE_FFT DFT POW3_FFT POW2RADIX4_FFT BLUESTEIN POW5_FFT POW7_FFT STOCKHAM
 
 @inline function direction_sign(d::Direction)
     Int(d)
@@ -74,7 +74,10 @@ struct CallGraph{T<:Complex}
     blue_index::Vector{Int}
     dir::Direction
     BLUESTEIN_CUTOFF::Int
+    stockham::Any     # `nothing`, or the StockhamChain of a STOCKHAM root (untyped: defined later)
 end
+CallGraph(nodes, workspace, twiddles, bluestein, blue_index, dir, cutoff) =
+    CallGraph(nodes, workspace, twiddles, bluestein, blue_index, dir, cutoff, nothing)
 
 # Primes below this use the O(N²) DFT with a twiddle table; at and above it
 # Bluestein's algorithm is used. Measured crossovers (ComplexF64, planned
@@ -435,7 +438,12 @@ $(TYPEDSIGNATURES)
 Instantiate a CallGraph from a number `N`, with twiddle factors for direction `dir`
 
 """
-function CallGraph{T}(N::Int, BLUESTEIN_CUTOFF::Int, dir::Direction=FFT_FORWARD) where {T}
+function CallGraph{T}(N::Int, BLUESTEIN_CUTOFF::Int, dir::Direction=FFT_FORWARD; num_threads::Int=1) where {T}
+    if _use_stockham(T, N, num_threads)
+        node = CallGraphNode(0, 0, STOCKHAM, N, 1, 1)
+        return CallGraph{T}([node], [T[]], [T[]], BluesteinScratch{T,CallGraph{T}}[], [0],
+                            dir, BLUESTEIN_CUTOFF, StockhamChain{real(T)}(N, dir))
+    end
     nodes = CallGraphNode[]
     workspace = Vector{Vector{T}}()
     CallGraphNode!(nodes, N, workspace, BLUESTEIN_CUTOFF, 1, 1)
@@ -448,5 +456,5 @@ function CallGraph{T}(N::Int, BLUESTEIN_CUTOFF::Int, dir::Direction=FFT_FORWARD)
             blue_index[idx] = length(bluestein)
         end
     end
-    CallGraph(nodes, workspace, twiddles, bluestein, blue_index, dir, BLUESTEIN_CUTOFF)
+    CallGraph{T}(nodes, workspace, twiddles, bluestein, blue_index, dir, BLUESTEIN_CUTOFF, nothing)
 end

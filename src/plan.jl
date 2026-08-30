@@ -42,7 +42,8 @@ end
 # workspace and Bluestein work arrays, so that it can run on another thread.
 _clone_workspace(g::CallGraph{T}) where {T} =
     CallGraph{T}(g.nodes, [Vector{T}(undef, length(w)) for w in g.workspace], g.twiddles,
-                 map(_clone_workspace, g.bluestein), g.blue_index, g.dir, g.BLUESTEIN_CUTOFF)
+                 map(_clone_workspace, g.bluestein), g.blue_index, g.dir, g.BLUESTEIN_CUTOFF,
+                 g.stockham === nothing ? nothing : _clone_chain(g.stockham))
 _clone_workspace(s::BluesteinScratch{T,G}) where {T,G} =
     BluesteinScratch{T,G}(s.N, s.pad_len, s.chirp, s.chirp_fft, Vector{T}(undef, s.pad_len), Vector{T}(undef, s.pad_len), _clone_workspace(s.graph))
 
@@ -194,17 +195,17 @@ function _plan_fft(
     M = length(region)
     if M == 1
         R1 = Int(region[1])
-        g = CallGraph{T}(size(x, R1), BLUESTEIN_CUTOFF, dir)
+        g = CallGraph{T}(size(x, R1), BLUESTEIN_CUTOFF, dir; num_threads)
         return FFTAPlan_cx{T,1}((g,), R1, dir; num_threads)
     elseif M == 2
         R2 = _sort(region)
-        g1 = CallGraph{T}(size(x, R2[1]), BLUESTEIN_CUTOFF, dir)
-        g2 = CallGraph{T}(size(x, R2[2]), BLUESTEIN_CUTOFF, dir)
+        g1 = CallGraph{T}(size(x, R2[1]), BLUESTEIN_CUTOFF, dir; num_threads)
+        g2 = CallGraph{T}(size(x, R2[2]), BLUESTEIN_CUTOFF, dir; num_threads)
         return FFTAPlan_cx{T,2}((g1, g2), R2, dir; num_threads)
     else
         RM = _sort(region)
         return FFTAPlan_cx{T,M}(
-            ntuple(i -> CallGraph{T}(size(x, RM[i]), BLUESTEIN_CUTOFF, dir), Val(M)),
+            ntuple(i -> CallGraph{T}(size(x, RM[i]), BLUESTEIN_CUTOFF, dir; num_threads), Val(M)),
             RM, dir; num_threads
         )
     end
@@ -265,13 +266,13 @@ function _plan_brfft(
         # problems, we just solve the problem as a single complex
         R1 = Int(region[1])
         nn = iseven(len) ? len >> 1 : len
-        g = CallGraph{T}(nn, BLUESTEIN_CUTOFF, FFT_BACKWARD)
+        g = CallGraph{T}(nn, BLUESTEIN_CUTOFF, FFT_BACKWARD; num_threads)
         return FFTAPlan_re{T,1}((g,), R1, FFT_BACKWARD, len; num_threads)
     else
         RM = _sort(region)
         nn = iseven(len) ? len >> 1 : len
-        cg = (CallGraph{T}(nn, BLUESTEIN_CUTOFF, FFT_BACKWARD),
-              ntuple(i -> CallGraph{T}(size(x, RM[i + 1]), BLUESTEIN_CUTOFF, FFT_BACKWARD), Val(M - 1))...)
+        cg = (CallGraph{T}(nn, BLUESTEIN_CUTOFF, FFT_BACKWARD; num_threads),
+              ntuple(i -> CallGraph{T}(size(x, RM[i + 1]), BLUESTEIN_CUTOFF, FFT_BACKWARD; num_threads), Val(M - 1))...)
         return FFTAPlan_re{T,M}(cg, RM, FFT_BACKWARD, len; num_threads)
     end
 end
@@ -838,7 +839,7 @@ end
 function AbstractFFTs.plan_inv(p::FFTAPlan_cx{T,N,R}) where {T,N,R}
     dir = p.dir === FFT_FORWARD ? FFT_BACKWARD : FFT_FORWARD
     cutoff = p.callgraph[1].BLUESTEIN_CUTOFF
-    cg = ntuple(i -> CallGraph{T}(size(p, i), cutoff, dir), Val(N))
+    cg = ntuple(i -> CallGraph{T}(size(p, i), cutoff, dir; num_threads = _num_threads(p)), Val(N))
     q = FFTAPlan_cx{T,N,R}(cg, p.region, dir, _workers(cg, Val(N), _num_threads(p), 0))
     AbstractFFTs.ScaledPlan(q, _normalization(p))
 end
@@ -848,7 +849,7 @@ function AbstractFFTs.plan_inv(p::FFTAPlan_re{T,N,R,S}) where {T,N,R,S}
     cutoff = p.callgraph[1].BLUESTEIN_CUTOFF
     n = p.flen
     nn = iseven(n) ? n >> 1 : n
-    cg = (CallGraph{T}(nn, cutoff, dir), ntuple(i -> CallGraph{T}(size(p, i + 1), cutoff, dir), Val(N - 1))...)
+    cg = (CallGraph{T}(nn, cutoff, dir; num_threads = _num_threads(p)), ntuple(i -> CallGraph{T}(size(p, i + 1), cutoff, dir; num_threads = _num_threads(p)), Val(N - 1))...)
     q = FFTAPlan_re{T,N,R}(cg, p.region, dir, n, _workers(cg, Val(N), _num_threads(p), _re_buflen(n, dir), n))
     AbstractFFTs.ScaledPlan(q, _normalization(p))
 end
