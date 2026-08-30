@@ -38,3 +38,23 @@ end
     mul!(Z3, IP3, Y3)
     @test (@allocated mul!(Z3, IP3, Y3)) == 0
 end
+
+@testset "adjoint over a dims subset" begin
+    x = randn(ComplexF64, 8, 9, 10)
+    y = randn(ComplexF64, 8, 9, 10)
+    for dims in ((1,), (2,), (3,), (1, 2), (2, 3), (1, 3), (1, 2, 3))
+        p = plan_fft(x, dims)
+        @test dot(p * x, y) ≈ dot(x, p' * y)
+        pi_ = plan_fft!(copy(x), dims)
+        @test dot(pi_ * copy(x), y) ≈ dot(x, pi_' * y)
+    end
+    xr = randn(8, 9, 10)
+    for dims in ((1,), (2,), (3,), (2, 3))
+        pr = plan_rfft(xr, dims)
+        yc = randn(ComplexF64, size(pr * xr))
+        @test real(dot(pr * xr, yc)) ≈ real(dot(xr, pr' * yc))
+        pb = plan_brfft(pr * xr, size(xr, first(dims)), dims)
+        yr = randn(size(xr))
+        @test real(dot(pb * (pr * xr), yr)) ≈ real(dot(pr * xr, pb' * yr))
+    end
+end

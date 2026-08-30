@@ -849,6 +849,13 @@ end
 # adjoint plans (`p'`, `AbstractFFTs.adjoint_mul`): the generic machinery
 # only needs the plan's adjoint style and `size`/`fftdims`
 AbstractFFTs.AdjointStyle(::FFTAPlan_cx) = AbstractFFTs.FFTAdjointStyle()
+
+# The generic `adjoint_mul` computes `normalization(T, size(p), fftdims(p))`,
+# indexing `size(p)` by array-dim numbers; FFTA's `size(p)` lists only the
+# transform lengths, so any dims other than a `1:k` prefix would go out of
+# bounds. Same computation, normalizing over the plan's own dims:
+AbstractFFTs.adjoint_mul(p::FFTAPlan_cx{T}, x::AbstractArray, ::AbstractFFTs.FFTAdjointStyle) where {T} =
+    (p \ x) / _normalization(p)
 AbstractFFTs.AdjointStyle(p::FFTAPlan_re) =
     p.dir === FFT_FORWARD ? AbstractFFTs.RFFTAdjointStyle() : AbstractFFTs.IRFFTAdjointStyle(p.flen)
 
@@ -858,10 +865,10 @@ AbstractFFTs.AdjointStyle(p::FFTAPlan_re) =
 # dimension's doubled bins, then unnormalized inverse).
 function AbstractFFTs.adjoint_mul(p::FFTAPlan_re{T}, x::AbstractArray, ::AbstractFFTs.RFFTAdjointStyle) where {T<:Complex}
     dims = AbstractFFTs.fftdims(p)
-    N = AbstractFFTs.normalization(real(T), size(p), dims)
-    halfdim = first(dims)
-    d = size(p, halfdim)
-    n = AbstractFFTs.output_size(p, halfdim)
+    N = _normalization(p)   # over the real transform lengths; `size(p, 1) == p.flen`
+    halfdim = first(dims)   # array-dim of the halved axis, used only for the reshape
+    d = p.flen
+    n = (d >> 1) + 1
     scale = reshape([(i == 1 || (i == n && 2 * (i - 1)) == d) ? N : 2 * N for i in 1:n],
                     ntuple(i -> i == halfdim ? n : 1, Val(ndims(x))))
     return p \ (x ./ convert(typeof(x), scale))
@@ -871,7 +878,7 @@ end
 # `d` the real length, which FFTA's `size` does not distinguish
 function AbstractFFTs.adjoint_mul(p::FFTAPlan_re{T}, x::AbstractArray, ::AbstractFFTs.IRFFTAdjointStyle) where {T<:Complex}
     dims = AbstractFFTs.fftdims(p)
-    N = AbstractFFTs.normalization(real(T), size(p), dims)
+    N = _normalization(p)   # over the real transform lengths; `size(p, 1) == p.flen`
     halfdim = first(dims)
     d = p.flen
     n = (d >> 1) + 1
@@ -919,6 +926,8 @@ AbstractFFTs.AdjointStyle(p::FFTAPlan_inplace) = AbstractFFTs.AdjointStyle(p.p)
 AbstractFFTs.fftdims(p::FFTAPlan_inplace) = AbstractFFTs.fftdims(p.p)
 Base.size(p::FFTAPlan_inplace) = size(p.p)
 Base.size(p::FFTAPlan_inplace, i::Int) = size(p.p, i)
+AbstractFFTs.adjoint_mul(p::FFTAPlan_inplace, x::AbstractArray, s::AbstractFFTs.FFTAdjointStyle) =
+    AbstractFFTs.adjoint_mul(p.p, x, s)
 
 AbstractFFTs.plan_fft!(x::AbstractArray{T,N}, region; kwargs...) where {T<:Complex,N} =
     FFTAPlan_inplace(_plan_fft(x, region, FFT_FORWARD; kwargs...), Array{T,N}(undef, size(x)))
