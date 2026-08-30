@@ -1,0 +1,2827 @@
+{
+ "complete": true,
+ "meta": {
+  "arch": "x86_64",
+  "cpu": "alderlake",
+  "date": "2026-08-30T10:47:44.884",
+  "impl": "ffta",
+  "julia": "1.12.6",
+  "seconds": 0.5,
+  "threads": 1,
+  "version": "FFTA.jl 0.3.1 @ 94ab080"
+ },
+ "results": [
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 5.654666666666667e-7,
+   "key": "fft Float64 8×8 dims=1,2",
+   "kind": "fft",
+   "measure": false,
+   "n": 64,
+   "norm": 59.400572724989644,
+   "nthreads": 1,
+   "plan_min": 5.461052631578948e-7,
+   "shape": "2d",
+   "size": [
+    8,
+    8
+   ],
+   "sum_im": 6.605524953561352,
+   "sum_re": -45.60637174993191
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 8.952380952380953e-7,
+   "key": "rfft Float64 8×8 dims=1,2",
+   "kind": "rfft",
+   "measure": false,
+   "n": 64,
+   "norm": 40.75218965723355,
+   "nthreads": 1,
+   "plan_min": 5.021333333333333e-7,
+   "shape": "2d",
+   "size": [
+    8,
+    8
+   ],
+   "sum_im": 48.251832342167496,
+   "sum_re": 6.356189332753001
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 6.0225e-7,
+   "key": "fft Float32 8×8 dims=1,2",
+   "kind": "fft",
+   "measure": false,
+   "n": 64,
+   "norm": 59.40057,
+   "nthreads": 1,
+   "plan_min": 5.172727272727273e-7,
+   "shape": "2d",
+   "size": [
+    8,
+    8
+   ],
+   "sum_im": 6.605523,
+   "sum_re": -45.60637
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 7.811428571428571e-7,
+   "key": "rfft Float32 8×8 dims=1,2",
+   "kind": "rfft",
+   "measure": false,
+   "n": 64,
+   "norm": 50.846016,
+   "nthreads": 1,
+   "plan_min": 4.876956521739131e-7,
+   "shape": "2d",
+   "size": [
+    8,
+    8
+   ],
+   "sum_im": 5.707537,
+   "sum_re": -47.598217
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 1.8430000000000002e-6,
+   "key": "fft Float64 16×16 dims=1,2",
+   "kind": "fft",
+   "measure": false,
+   "n": 256,
+   "norm": 247.49292722039877,
+   "nthreads": 1,
+   "plan_min": 6.211304347826088e-7,
+   "shape": "2d",
+   "size": [
+    16,
+    16
+   ],
+   "sum_im": 26.42209981424549,
+   "sum_re": -182.4254869997277
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 2.2438000000000004e-6,
+   "key": "rfft Float64 16×16 dims=1,2",
+   "kind": "rfft",
+   "measure": false,
+   "n": 256,
+   "norm": 174.11058504273234,
+   "nthreads": 1,
+   "plan_min": 6.258235294117648e-7,
+   "shape": "2d",
+   "size": [
+    16,
+    16
+   ],
+   "sum_im": 237.96997966080264,
+   "sum_re": 28.035697162353976
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 1.7713333333333333e-6,
+   "key": "fft Float32 16×16 dims=1,2",
+   "kind": "fft",
+   "measure": false,
+   "n": 256,
+   "norm": 247.49292,
+   "nthreads": 1,
+   "plan_min": 5.692727272727273e-7,
+   "shape": "2d",
+   "size": [
+    16,
+    16
+   ],
+   "sum_im": 26.42214,
+   "sum_re": -182.42548
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 1.998222222222222e-6,
+   "key": "rfft Float32 16×16 dims=1,2",
+   "kind": "rfft",
+   "measure": false,
+   "n": 256,
+   "norm": 180.1988,
+   "nthreads": 1,
+   "plan_min": 5.767368421052632e-7,
+   "shape": "2d",
+   "size": [
+    16,
+    16
+   ],
+   "sum_im": -48.13233,
+   "sum_re": -117.950676
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 6.9775000000000005e-6,
+   "key": "fft Float64 32×32 dims=1,2",
+   "kind": "fft",
+   "measure": false,
+   "n": 1024,
+   "norm": 1029.3527996372559,
+   "nthreads": 1,
+   "plan_min": 7.711111111111111e-7,
+   "shape": "2d",
+   "size": [
+    32,
+    32
+   ],
+   "sum_im": 105.6883992569819,
+   "sum_re": -729.7019479989102
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 6.942000000000001e-6,
+   "key": "rfft Float64 32×32 dims=1,2",
+   "kind": "rfft",
+   "measure": false,
+   "n": 1024,
+   "norm": 741.0008144993733,
+   "nthreads": 1,
+   "plan_min": 6.448e-7,
+   "shape": "2d",
+   "size": [
+    32,
+    32
+   ],
+   "sum_im": 883.3633826871962,
+   "sum_re": 274.1813800152296
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 7.297333333333334e-6,
+   "key": "fft Float32 32×32 dims=1,2",
+   "kind": "fft",
+   "measure": false,
+   "n": 1024,
+   "norm": 1029.3528,
+   "nthreads": 1,
+   "plan_min": 6.506153846153847e-7,
+   "shape": "2d",
+   "size": [
+    32,
+    32
+   ],
+   "sum_im": 105.68835,
+   "sum_re": -729.7014
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 6.502333333333334e-6,
+   "key": "rfft Float32 32×32 dims=1,2",
+   "kind": "rfft",
+   "measure": false,
+   "n": 1024,
+   "norm": 743.323,
+   "nthreads": 1,
+   "plan_min": 6.424615384615385e-7,
+   "shape": "2d",
+   "size": [
+    32,
+    32
+   ],
+   "sum_im": 441.68015,
+   "sum_re": -443.22552
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 3.9485000000000006e-5,
+   "key": "fft Float64 64×64 dims=1,2",
+   "kind": "fft",
+   "measure": false,
+   "n": 4096,
+   "norm": 4122.267941444069,
+   "nthreads": 1,
+   "plan_min": 9.6675e-7,
+   "shape": "2d",
+   "size": [
+    64,
+    64
+   ],
+   "sum_im": 422.7535970279288,
+   "sum_re": -2918.8077919956395
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 2.447e-5,
+   "key": "rfft Float64 64×64 dims=1,2",
+   "kind": "rfft",
+   "measure": false,
+   "n": 4096,
+   "norm": 2944.182477131571,
+   "nthreads": 1,
+   "plan_min": 9.311666666666667e-7,
+   "shape": "2d",
+   "size": [
+    64,
+    64
+   ],
+   "sum_im": 3084.9102018277745,
+   "sum_re": 1290.8302761035688
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 3.1914e-5,
+   "key": "fft Float32 64×64 dims=1,2",
+   "kind": "fft",
+   "measure": false,
+   "n": 4096,
+   "norm": 4122.2676,
+   "nthreads": 1,
+   "plan_min": 8.318e-7,
+   "shape": "2d",
+   "size": [
+    64,
+    64
+   ],
+   "sum_im": 422.75427,
+   "sum_re": -2918.8071
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 2.4431e-5,
+   "key": "rfft Float32 64×64 dims=1,2",
+   "kind": "rfft",
+   "measure": false,
+   "n": 4096,
+   "norm": 2959.081,
+   "nthreads": 1,
+   "plan_min": 8.103e-7,
+   "shape": "2d",
+   "size": [
+    64,
+    64
+   ],
+   "sum_im": -1814.8943,
+   "sum_re": -2104.2512
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.00022775600000000002,
+   "key": "fft Float64 128×128 dims=1,2",
+   "kind": "fft",
+   "measure": false,
+   "n": 16384,
+   "norm": 16459.04699311385,
+   "nthreads": 1,
+   "plan_min": 1.9206e-6,
+   "shape": "2d",
+   "size": [
+    128,
+    128
+   ],
+   "sum_im": 1691.0143881116946,
+   "sum_re": -11675.231167982573
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.000100246,
+   "key": "rfft Float64 128×128 dims=1,2",
+   "kind": "rfft",
+   "measure": false,
+   "n": 16384,
+   "norm": 11607.911226688126,
+   "nthreads": 1,
+   "plan_min": 1.5968000000000001e-6,
+   "shape": "2d",
+   "size": [
+    128,
+    128
+   ],
+   "sum_im": 4286.28653996891,
+   "sum_re": 5889.486175111745
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.000228948,
+   "key": "fft Float32 128×128 dims=1,2",
+   "kind": "fft",
+   "measure": false,
+   "n": 16384,
+   "norm": 16459.045,
+   "nthreads": 1,
+   "plan_min": 1.2834444444444445e-6,
+   "shape": "2d",
+   "size": [
+    128,
+    128
+   ],
+   "sum_im": 1691.0024,
+   "sum_re": -11675.23
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.00010726600000000001,
+   "key": "rfft Float32 128×128 dims=1,2",
+   "kind": "rfft",
+   "measure": false,
+   "n": 16384,
+   "norm": 11650.475,
+   "nthreads": 1,
+   "plan_min": 1.1216e-6,
+   "shape": "2d",
+   "size": [
+    128,
+    128
+   ],
+   "sum_im": 6048.206,
+   "sum_re": -9324.513
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.001069859,
+   "key": "fft Float64 256×256 dims=1,2",
+   "kind": "fft",
+   "measure": false,
+   "n": 65536,
+   "norm": 65568.13306439742,
+   "nthreads": 1,
+   "plan_min": 2.881666666666667e-6,
+   "shape": "2d",
+   "size": [
+    256,
+    256
+   ],
+   "sum_im": 6764.057552446748,
+   "sum_re": -46700.92467193035
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.000424582,
+   "key": "rfft Float64 256×256 dims=1,2",
+   "kind": "rfft",
+   "measure": false,
+   "n": 65536,
+   "norm": 46493.6957676477,
+   "nthreads": 1,
+   "plan_min": 2.5716666666666665e-6,
+   "shape": "2d",
+   "size": [
+    256,
+    256
+   ],
+   "sum_im": 31118.215846627125,
+   "sum_re": 26604.11649965035
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.0010402830000000001,
+   "key": "fft Float32 256×256 dims=1,2",
+   "kind": "fft",
+   "measure": false,
+   "n": 65536,
+   "norm": 65568.125,
+   "nthreads": 1,
+   "plan_min": 2.3854e-6,
+   "shape": "2d",
+   "size": [
+    256,
+    256
+   ],
+   "sum_im": 6764.0957,
+   "sum_re": -46700.883
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.00044367600000000005,
+   "key": "rfft Float32 256×256 dims=1,2",
+   "kind": "rfft",
+   "measure": false,
+   "n": 65536,
+   "norm": 46593.113,
+   "nthreads": 1,
+   "plan_min": 1.9456e-6,
+   "shape": "2d",
+   "size": [
+    256,
+    256
+   ],
+   "sum_im": 30428.994,
+   "sum_re": -37265.75
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.0052403350000000005,
+   "key": "fft Float64 512×512 dims=1,2",
+   "kind": "fft",
+   "measure": false,
+   "n": 262144,
+   "norm": 262191.624792794,
+   "nthreads": 1,
+   "plan_min": 5.043666666666667e-6,
+   "shape": "2d",
+   "size": [
+    512,
+    512
+   ],
+   "sum_im": 27056.230209787507,
+   "sum_re": -186803.69868772113
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.002119951,
+   "key": "rfft Float64 512×512 dims=1,2",
+   "kind": "rfft",
+   "measure": false,
+   "n": 262144,
+   "norm": 185973.4637921337,
+   "nthreads": 1,
+   "plan_min": 4.5073333333333334e-6,
+   "shape": "2d",
+   "size": [
+    512,
+    512
+   ],
+   "sum_im": 31394.753548077002,
+   "sum_re": 111264.87372641076
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.005804807,
+   "key": "fft Float32 512×512 dims=1,2",
+   "kind": "fft",
+   "measure": false,
+   "n": 262144,
+   "norm": 262191.6,
+   "nthreads": 1,
+   "plan_min": 3.8570000000000005e-6,
+   "shape": "2d",
+   "size": [
+    512,
+    512
+   ],
+   "sum_im": 27056.266,
+   "sum_re": -186803.9
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.002188743,
+   "key": "rfft Float32 512×512 dims=1,2",
+   "kind": "rfft",
+   "measure": false,
+   "n": 262144,
+   "norm": 185732.86,
+   "nthreads": 1,
+   "plan_min": 3.3895000000000003e-6,
+   "shape": "2d",
+   "size": [
+    512,
+    512
+   ],
+   "sum_im": 44177.12,
+   "sum_re": -140120.42
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.032290193,
+   "key": "fft Float64 1024×1024 dims=1,2",
+   "kind": "fft",
+   "measure": false,
+   "n": 1048576,
+   "norm": 1.0480995283560391e6,
+   "nthreads": 1,
+   "plan_min": 8.858e-6,
+   "shape": "2d",
+   "size": [
+    1024,
+    1024
+   ],
+   "sum_im": 108224.92083914857,
+   "sum_re": -747214.794750884
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.010598497,
+   "key": "rfft Float64 1024×1024 dims=1,2",
+   "kind": "rfft",
+   "measure": false,
+   "n": 1048576,
+   "norm": 742826.746514685,
+   "nthreads": 1,
+   "plan_min": 7.381e-6,
+   "shape": "2d",
+   "size": [
+    1024,
+    1024
+   ],
+   "sum_im": 160362.58689327756,
+   "sum_re": 431424.052288658
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.030360428000000002,
+   "key": "fft Float32 1024×1024 dims=1,2",
+   "kind": "fft",
+   "measure": false,
+   "n": 1048576,
+   "norm": 1.04809944e6,
+   "nthreads": 1,
+   "plan_min": 6.979333333333334e-6,
+   "shape": "2d",
+   "size": [
+    1024,
+    1024
+   ],
+   "sum_im": 108224.94,
+   "sum_re": -747214.75
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.010954727000000001,
+   "key": "rfft Float32 1024×1024 dims=1,2",
+   "kind": "rfft",
+   "measure": false,
+   "n": 1048576,
+   "norm": 742642.06,
+   "nthreads": 1,
+   "plan_min": 5.663000000000001e-6,
+   "shape": "2d",
+   "size": [
+    1024,
+    1024
+   ],
+   "sum_im": -436787.8,
+   "sum_re": -534432.5
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.283982887,
+   "key": "fft Float64 2048×2048 dims=1,2",
+   "kind": "fft",
+   "measure": false,
+   "n": 4194304,
+   "norm": 4.194429087771593e6,
+   "nthreads": 1,
+   "plan_min": 1.7438e-5,
+   "shape": "2d",
+   "size": [
+    2048,
+    2048
+   ],
+   "sum_im": 432899.68335659686,
+   "sum_re": -2.9888591790035423e6
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.065800698,
+   "key": "rfft Float64 2048×2048 dims=1,2",
+   "kind": "rfft",
+   "measure": false,
+   "n": 4194304,
+   "norm": 2.967148889687769e6,
+   "nthreads": 1,
+   "plan_min": 1.3494000000000002e-5,
+   "shape": "2d",
+   "size": [
+    2048,
+    2048
+   ],
+   "sum_im": 2.92318519550464e6,
+   "sum_re": 1.6944161813281993e6
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.169777282,
+   "key": "fft Float32 2048×2048 dims=1,2",
+   "kind": "fft",
+   "measure": false,
+   "n": 4194304,
+   "norm": 4.194429e6,
+   "nthreads": 1,
+   "plan_min": 1.25555e-5,
+   "shape": "2d",
+   "size": [
+    2048,
+    2048
+   ],
+   "sum_im": 432897.62,
+   "sum_re": -2.9888568e6
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.061527143000000006,
+   "key": "rfft Float32 2048×2048 dims=1,2",
+   "kind": "rfft",
+   "measure": false,
+   "n": 4194304,
+   "norm": 2.967276e6,
+   "nthreads": 1,
+   "plan_min": 9.809e-6,
+   "shape": "2d",
+   "size": [
+    2048,
+    2048
+   ],
+   "sum_im": -419301.0,
+   "sum_re": -2.1743292e6
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.08242964900000001,
+   "key": "fft Float64 1000×1000 dims=1,2",
+   "kind": "fft",
+   "measure": false,
+   "n": 1000000,
+   "norm": 999514.3560864521,
+   "nthreads": 1,
+   "plan_min": 2.5998e-5,
+   "shape": "2d",
+   "size": [
+    1000,
+    1000
+   ],
+   "sum_im": 103211.32739939634,
+   "sum_re": -712599.5585926867
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.039799291,
+   "key": "rfft Float64 1000×1000 dims=1,2",
+   "kind": "rfft",
+   "measure": false,
+   "n": 1000000,
+   "norm": 708409.1307382033,
+   "nthreads": 1,
+   "plan_min": 4.3016e-5,
+   "shape": "2d",
+   "size": [
+    1000,
+    1000
+   ],
+   "sum_im": 594417.2245282438,
+   "sum_re": 403147.74123894813
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.018813907,
+   "key": "fft Float64 720×480 dims=1,2",
+   "kind": "fft",
+   "measure": false,
+   "n": 345600,
+   "norm": 345759.7064864976,
+   "nthreads": 1,
+   "plan_min": 1.1761000000000001e-5,
+   "shape": "2d",
+   "size": [
+    720,
+    480
+   ],
+   "sum_im": 35669.83474923158,
+   "sum_re": -246274.4074496325
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.009021997,
+   "key": "rfft Float64 720×480 dims=1,2",
+   "kind": "rfft",
+   "measure": false,
+   "n": 345600,
+   "norm": 245131.36006130723,
+   "nthreads": 1,
+   "plan_min": 1.0042000000000001e-5,
+   "shape": "2d",
+   "size": [
+    720,
+    480
+   ],
+   "sum_im": 50476.5140956745,
+   "sum_re": 142047.96596536227
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.0023022140000000003,
+   "key": "fft Float64 1009×64 dims=1,2",
+   "kind": "fft",
+   "measure": false,
+   "n": 64576,
+   "norm": 64623.53067290636,
+   "nthreads": 1,
+   "plan_min": 6.7421e-5,
+   "shape": "2d",
+   "size": [
+    1009,
+    64
+   ],
+   "sum_im": 6664.974678143364,
+   "sum_re": -46016.829095681336
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.002064097,
+   "key": "rfft Float64 1009×64 dims=1,2",
+   "kind": "rfft",
+   "measure": false,
+   "n": 64576,
+   "norm": 45664.124703888425,
+   "nthreads": 1,
+   "plan_min": 6.812700000000001e-5,
+   "shape": "2d",
+   "size": [
+    1009,
+    64
+   ],
+   "sum_im": 25868.575883131492,
+   "sum_re": 26206.909429520456
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.0025123240000000002,
+   "key": "fft Float64 64×1009 dims=1,2",
+   "kind": "fft",
+   "measure": false,
+   "n": 64576,
+   "norm": 64623.53067290636,
+   "nthreads": 1,
+   "plan_min": 6.001e-5,
+   "shape": "2d",
+   "size": [
+    64,
+    1009
+   ],
+   "sum_im": 6664.9746781434715,
+   "sum_re": -46016.82909568128
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.0013358130000000001,
+   "key": "rfft Float64 64×1009 dims=1,2",
+   "kind": "rfft",
+   "measure": false,
+   "n": 64576,
+   "norm": 46345.65465648853,
+   "nthreads": 1,
+   "plan_min": 6.730000000000001e-5,
+   "shape": "2d",
+   "size": [
+    64,
+    1009
+   ],
+   "sum_im": 48635.53740069094,
+   "sum_re": 20350.74607169526
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.0025348750000000002,
+   "key": "fft Float64 127×257 dims=1,2",
+   "kind": "fft",
+   "measure": false,
+   "n": 32639,
+   "norm": 32689.64009311062,
+   "nthreads": 1,
+   "plan_min": 3.3144e-5,
+   "shape": "2d",
+   "size": [
+    127,
+    257
+   ],
+   "sum_im": 3368.7145149888893,
+   "sum_re": -23258.536992906666
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.00168819,
+   "key": "rfft Float64 127×257 dims=1,2",
+   "kind": "rfft",
+   "measure": false,
+   "n": 32639,
+   "norm": 23148.57830204503,
+   "nthreads": 1,
+   "plan_min": 3.4497000000000005e-5,
+   "shape": "2d",
+   "size": [
+    127,
+    257
+   ],
+   "sum_im": 12045.819685308506,
+   "sum_re": 11572.239717552631
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2,
+    3
+   ],
+   "exec_alloc": 0,
+   "exec_min": 6.9995000000000005e-6,
+   "key": "fft Float64 8×8×8 dims=1,2,3",
+   "kind": "fft",
+   "measure": false,
+   "n": 512,
+   "norm": 509.45029649846884,
+   "nthreads": 1,
+   "plan_min": 6.822222222222222e-7,
+   "shape": "3d",
+   "size": [
+    8,
+    8,
+    8
+   ],
+   "sum_im": 52.84419962849084,
+   "sum_re": -364.8509739994553
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2,
+    3
+   ],
+   "exec_alloc": 0,
+   "exec_min": 7.772000000000001e-6,
+   "key": "rfft Float64 8×8×8 dims=1,2,3",
+   "kind": "rfft",
+   "measure": false,
+   "n": 512,
+   "norm": 384.4964360434116,
+   "nthreads": 1,
+   "plan_min": 7.361666666666666e-7,
+   "shape": "3d",
+   "size": [
+    8,
+    8,
+    8
+   ],
+   "sum_im": 386.0146587373399,
+   "sum_re": 50.84951466202393
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2,
+    3
+   ],
+   "exec_alloc": 0,
+   "exec_min": 8.422e-6,
+   "key": "fft Float32 8×8×8 dims=1,2,3",
+   "kind": "fft",
+   "measure": false,
+   "n": 512,
+   "norm": 509.4503,
+   "nthreads": 1,
+   "plan_min": 7.521052631578948e-7,
+   "shape": "3d",
+   "size": [
+    8,
+    8,
+    8
+   ],
+   "sum_im": 52.844284,
+   "sum_re": -364.85095
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2,
+    3
+   ],
+   "exec_alloc": 0,
+   "exec_min": 8.395e-6,
+   "key": "rfft Float32 8×8×8 dims=1,2,3",
+   "kind": "rfft",
+   "measure": false,
+   "n": 512,
+   "norm": 387.20984,
+   "nthreads": 1,
+   "plan_min": 6.969090909090909e-7,
+   "shape": "3d",
+   "size": [
+    8,
+    8,
+    8
+   ],
+   "sum_im": 45.660313,
+   "sum_re": -380.7858
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2,
+    3
+   ],
+   "exec_alloc": 0,
+   "exec_min": 6.6735e-5,
+   "key": "fft Float64 16×16×16 dims=1,2,3",
+   "kind": "fft",
+   "measure": false,
+   "n": 4096,
+   "norm": 4122.267941444069,
+   "nthreads": 1,
+   "plan_min": 8.747500000000001e-7,
+   "shape": "3d",
+   "size": [
+    16,
+    16,
+    16
+   ],
+   "sum_im": 422.75359702792423,
+   "sum_re": -2918.8077919956354
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2,
+    3
+   ],
+   "exec_alloc": 0,
+   "exec_min": 4.9227e-5,
+   "key": "rfft Float64 16×16×16 dims=1,2,3",
+   "kind": "rfft",
+   "measure": false,
+   "n": 4096,
+   "norm": 3072.2905176926515,
+   "nthreads": 1,
+   "plan_min": 9.162000000000001e-7,
+   "shape": "3d",
+   "size": [
+    16,
+    16,
+    16
+   ],
+   "sum_im": 3807.519674572839,
+   "sum_re": 448.57115459766214
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2,
+    3
+   ],
+   "exec_alloc": 0,
+   "exec_min": 4.9116e-5,
+   "key": "fft Float32 16×16×16 dims=1,2,3",
+   "kind": "fft",
+   "measure": false,
+   "n": 4096,
+   "norm": 4122.2676,
+   "nthreads": 1,
+   "plan_min": 8.287142857142857e-7,
+   "shape": "3d",
+   "size": [
+    16,
+    16,
+    16
+   ],
+   "sum_im": 422.7544,
+   "sum_re": -2918.8108
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2,
+    3
+   ],
+   "exec_alloc": 0,
+   "exec_min": 3.37e-5,
+   "key": "rfft Float32 16×16×16 dims=1,2,3",
+   "kind": "rfft",
+   "measure": false,
+   "n": 4096,
+   "norm": 3082.772,
+   "nthreads": 1,
+   "plan_min": 8.508e-7,
+   "shape": "3d",
+   "size": [
+    16,
+    16,
+    16
+   ],
+   "sum_im": -770.11676,
+   "sum_re": -1887.2115
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2,
+    3
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.0005363900000000001,
+   "key": "fft Float64 32×32×32 dims=1,2,3",
+   "kind": "fft",
+   "measure": false,
+   "n": 32768,
+   "norm": 32816.033833762536,
+   "nthreads": 1,
+   "plan_min": 1.0920909090909091e-6,
+   "shape": "3d",
+   "size": [
+    32,
+    32,
+    32
+   ],
+   "sum_im": 3382.0287762234366,
+   "sum_re": -23350.462335965134
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2,
+    3
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.000307284,
+   "key": "rfft Float64 32×32×32 dims=1,2,3",
+   "kind": "rfft",
+   "measure": false,
+   "n": 32768,
+   "norm": 23850.345487934093,
+   "nthreads": 1,
+   "plan_min": 1.0731e-6,
+   "shape": "3d",
+   "size": [
+    32,
+    32,
+    32
+   ],
+   "sum_im": 28267.628245990236,
+   "sum_re": 8773.804160487323
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2,
+    3
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.000543746,
+   "key": "fft Float32 32×32×32 dims=1,2,3",
+   "kind": "fft",
+   "measure": false,
+   "n": 32768,
+   "norm": 32816.03,
+   "nthreads": 1,
+   "plan_min": 9.712857142857144e-7,
+   "shape": "3d",
+   "size": [
+    32,
+    32,
+    32
+   ],
+   "sum_im": 3382.0625,
+   "sum_re": -23350.457
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2,
+    3
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.00029925700000000004,
+   "key": "rfft Float32 32×32×32 dims=1,2,3",
+   "kind": "rfft",
+   "measure": false,
+   "n": 32768,
+   "norm": 23973.232,
+   "nthreads": 1,
+   "plan_min": 9.332000000000001e-7,
+   "shape": "3d",
+   "size": [
+    32,
+    32,
+    32
+   ],
+   "sum_im": 14133.768,
+   "sum_re": -14183.203
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2,
+    3
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.005870157,
+   "key": "fft Float64 64×64×64 dims=1,2,3",
+   "kind": "fft",
+   "measure": false,
+   "n": 262144,
+   "norm": 262191.62479279394,
+   "nthreads": 1,
+   "plan_min": 1.637625e-6,
+   "shape": "3d",
+   "size": [
+    64,
+    64,
+    64
+   ],
+   "sum_im": 27056.230209787256,
+   "sum_re": -186803.69868772113
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2,
+    3
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.002617957,
+   "key": "rfft Float64 64×64×64 dims=1,2,3",
+   "kind": "rfft",
+   "measure": false,
+   "n": 262144,
+   "norm": 188493.77723967316,
+   "nthreads": 1,
+   "plan_min": 1.3800000000000001e-6,
+   "shape": "3d",
+   "size": [
+    64,
+    64,
+    64
+   ],
+   "sum_im": 197434.2529169773,
+   "sum_re": 82613.13767062828
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2,
+    3
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.0047350660000000004,
+   "key": "fft Float32 64×64×64 dims=1,2,3",
+   "kind": "fft",
+   "measure": false,
+   "n": 262144,
+   "norm": 262191.6,
+   "nthreads": 1,
+   "plan_min": 1.2864166666666668e-6,
+   "shape": "3d",
+   "size": [
+    64,
+    64,
+    64
+   ],
+   "sum_im": 27056.285,
+   "sum_re": -186803.62
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2,
+    3
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.0022718300000000003,
+   "key": "rfft Float32 64×64×64 dims=1,2,3",
+   "kind": "rfft",
+   "measure": false,
+   "n": 262144,
+   "norm": 188270.62,
+   "nthreads": 1,
+   "plan_min": 1.2123333333333334e-6,
+   "shape": "3d",
+   "size": [
+    64,
+    64,
+    64
+   ],
+   "sum_im": -116153.26,
+   "sum_re": -134672.22
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2,
+    3
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.07789011900000001,
+   "key": "fft Float64 128×128×128 dims=1,2,3",
+   "kind": "fft",
+   "measure": false,
+   "n": 2097152,
+   "norm": 2.0971469383682813e6,
+   "nthreads": 1,
+   "plan_min": 2.8236666666666668e-6,
+   "shape": "3d",
+   "size": [
+    128,
+    128,
+    128
+   ],
+   "sum_im": 216449.8416783018,
+   "sum_re": -1.4944295895017723e6
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2,
+    3
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.025024378,
+   "key": "rfft Float64 128×128×128 dims=1,2,3",
+   "kind": "rfft",
+   "measure": false,
+   "n": 2097152,
+   "norm": 1.4935389400469123e6,
+   "nthreads": 1,
+   "plan_min": 2.8275e-6,
+   "shape": "3d",
+   "size": [
+    128,
+    128,
+    128
+   ],
+   "sum_im": 548644.677116021,
+   "sum_re": 753854.2304143026
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2,
+    3
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.072942247,
+   "key": "fft Float32 128×128×128 dims=1,2,3",
+   "kind": "fft",
+   "measure": false,
+   "n": 2097152,
+   "norm": 2.0971468e6,
+   "nthreads": 1,
+   "plan_min": 2.0493333333333334e-6,
+   "shape": "3d",
+   "size": [
+    128,
+    128,
+    128
+   ],
+   "sum_im": 216450.25,
+   "sum_re": -1.4944295e6
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": [
+    1,
+    2,
+    3
+   ],
+   "exec_alloc": 0,
+   "exec_min": 0.025976351,
+   "key": "rfft Float32 128×128×128 dims=1,2,3",
+   "kind": "rfft",
+   "measure": false,
+   "n": 2097152,
+   "norm": 1.493797e6,
+   "nthreads": 1,
+   "plan_min": 1.8442e-6,
+   "shape": "3d",
+   "size": [
+    128,
+    128,
+    128
+   ],
+   "sum_im": 774170.4,
+   "sum_re": -1.1935386e6
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 1,
+   "exec_alloc": 0,
+   "exec_min": 1.09755e-5,
+   "key": "fft Float64 64×64 dims=1",
+   "kind": "fft",
+   "measure": false,
+   "n": 64,
+   "norm": 515.2834926805086,
+   "nthreads": 1,
+   "plan_min": 5.662692307692307e-7,
+   "shape": "batched_dim1",
+   "size": [
+    64,
+    64
+   ],
+   "sum_im": -64.65187328690976,
+   "sum_re": 6.120328551762242
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 2,
+   "exec_alloc": 0,
+   "exec_min": 2.4425e-5,
+   "key": "fft Float64 64×64 dims=2",
+   "kind": "fft",
+   "measure": false,
+   "n": 64,
+   "norm": 515.2834926805086,
+   "nthreads": 1,
+   "plan_min": 5.855714285714286e-7,
+   "shape": "batched_dim2",
+   "size": [
+    64,
+    64
+   ],
+   "sum_im": -267.2882217786353,
+   "sum_re": -377.90545391844455
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 1,
+   "exec_alloc": 0,
+   "exec_min": 1.63265e-5,
+   "key": "rfft Float64 64×64 dims=1",
+   "kind": "rfft",
+   "measure": false,
+   "n": 64,
+   "norm": 368.0228096414464,
+   "nthreads": 1,
+   "plan_min": 4.5481818181818185e-7,
+   "shape": "batched_dim1",
+   "size": [
+    64,
+    64
+   ],
+   "sum_im": 57.82933426007613,
+   "sum_re": -36.37477145546769
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 2,
+   "exec_alloc": 0,
+   "exec_min": 2.1485000000000002e-5,
+   "key": "rfft Float64 64×64 dims=2",
+   "kind": "rfft",
+   "measure": false,
+   "n": 64,
+   "norm": 367.5735255286986,
+   "nthreads": 1,
+   "plan_min": 4.777142857142858e-7,
+   "shape": "batched_dim2",
+   "size": [
+    64,
+    64
+   ],
+   "sum_im": 201.66764637372862,
+   "sum_re": 96.89466574385088
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 1,
+   "exec_alloc": 0,
+   "exec_min": 1.3361000000000001e-5,
+   "key": "fft Float32 64×64 dims=1",
+   "kind": "fft",
+   "measure": false,
+   "n": 64,
+   "norm": 515.28345,
+   "nthreads": 1,
+   "plan_min": 4.816190476190476e-7,
+   "shape": "batched_dim1",
+   "size": [
+    64,
+    64
+   ],
+   "sum_im": -64.65166,
+   "sum_re": 6.1206055
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 2,
+   "exec_alloc": 0,
+   "exec_min": 1.6981000000000002e-5,
+   "key": "fft Float32 64×64 dims=2",
+   "kind": "fft",
+   "measure": false,
+   "n": 64,
+   "norm": 515.28345,
+   "nthreads": 1,
+   "plan_min": 4.856785714285715e-7,
+   "shape": "batched_dim2",
+   "size": [
+    64,
+    64
+   ],
+   "sum_im": -267.28766,
+   "sum_re": -377.90497
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 1,
+   "exec_alloc": 0,
+   "exec_min": 1.5271e-5,
+   "key": "rfft Float32 64×64 dims=1",
+   "kind": "rfft",
+   "measure": false,
+   "n": 64,
+   "norm": 369.88513,
+   "nthreads": 1,
+   "plan_min": 4.2200000000000005e-7,
+   "shape": "batched_dim1",
+   "size": [
+    64,
+    64
+   ],
+   "sum_im": -210.4219,
+   "sum_re": -452.14908
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 2,
+   "exec_alloc": 0,
+   "exec_min": 1.9844000000000002e-5,
+   "key": "rfft Float32 64×64 dims=2",
+   "kind": "rfft",
+   "measure": false,
+   "n": 64,
+   "norm": 370.94736,
+   "nthreads": 1,
+   "plan_min": 4.1833333333333333e-7,
+   "shape": "batched_dim2",
+   "size": [
+    64,
+    64
+   ],
+   "sum_im": -68.154045,
+   "sum_re": -261.58203
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 1,
+   "exec_alloc": 0,
+   "exec_min": 7.1238e-5,
+   "key": "fft Float64 256×64 dims=1",
+   "kind": "fft",
+   "measure": false,
+   "n": 256,
+   "norm": 2057.3808741392313,
+   "nthreads": 1,
+   "plan_min": 1.5324000000000001e-6,
+   "shape": "batched_dim1",
+   "size": [
+    256,
+    64
+   ],
+   "sum_im": -1036.3870296406647,
+   "sum_re": -1817.0348658480955
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 2,
+   "exec_alloc": 0,
+   "exec_min": 0.000183329,
+   "key": "fft Float64 64×256 dims=2",
+   "kind": "fft",
+   "measure": false,
+   "n": 256,
+   "norm": 2057.3808741392313,
+   "nthreads": 1,
+   "plan_min": 1.49325e-6,
+   "shape": "batched_dim2",
+   "size": [
+    64,
+    256
+   ],
+   "sum_im": -1069.1528871145367,
+   "sum_re": -1511.621815673777
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 1,
+   "exec_alloc": 0,
+   "exec_min": 6.1734e-5,
+   "key": "rfft Float64 256×64 dims=1",
+   "kind": "rfft",
+   "measure": false,
+   "n": 256,
+   "norm": 1445.8468032726084,
+   "nthreads": 1,
+   "plan_min": 1.2382e-6,
+   "shape": "batched_dim1",
+   "size": [
+    256,
+    64
+   ],
+   "sum_im": -193.81499923196017,
+   "sum_re": 1305.8246716852059
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 2,
+   "exec_alloc": 0,
+   "exec_min": 0.00010906400000000001,
+   "key": "rfft Float64 64×256 dims=2",
+   "kind": "rfft",
+   "measure": false,
+   "n": 256,
+   "norm": 1444.951584363223,
+   "nthreads": 1,
+   "plan_min": 1.2792857142857142e-6,
+   "shape": "batched_dim2",
+   "size": [
+    64,
+    256
+   ],
+   "sum_im": 1025.9819748641294,
+   "sum_re": 45.33310855003788
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 1,
+   "exec_alloc": 0,
+   "exec_min": 8.015600000000001e-5,
+   "key": "fft Float32 256×64 dims=1",
+   "kind": "fft",
+   "measure": false,
+   "n": 256,
+   "norm": 2057.3809,
+   "nthreads": 1,
+   "plan_min": 1.32725e-6,
+   "shape": "batched_dim1",
+   "size": [
+    256,
+    64
+   ],
+   "sum_im": -1036.3868,
+   "sum_re": -1817.0349
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 2,
+   "exec_alloc": 0,
+   "exec_min": 0.00017174600000000002,
+   "key": "fft Float32 64×256 dims=2",
+   "kind": "fft",
+   "measure": false,
+   "n": 256,
+   "norm": 2057.3809,
+   "nthreads": 1,
+   "plan_min": 1.3671666666666668e-6,
+   "shape": "batched_dim2",
+   "size": [
+    64,
+    256
+   ],
+   "sum_im": -1069.1536,
+   "sum_re": -1511.6228
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 1,
+   "exec_alloc": 0,
+   "exec_min": 6.7723e-5,
+   "key": "rfft Float32 256×64 dims=1",
+   "kind": "rfft",
+   "measure": false,
+   "n": 256,
+   "norm": 1451.4469,
+   "nthreads": 1,
+   "plan_min": 7.835555555555556e-7,
+   "shape": "batched_dim1",
+   "size": [
+    256,
+    64
+   ],
+   "sum_im": -1525.7972,
+   "sum_re": -699.62646
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 2,
+   "exec_alloc": 0,
+   "exec_min": 0.00011293,
+   "key": "rfft Float32 64×256 dims=2",
+   "kind": "rfft",
+   "measure": false,
+   "n": 256,
+   "norm": 1451.8234,
+   "nthreads": 1,
+   "plan_min": 8.250714285714286e-7,
+   "shape": "batched_dim2",
+   "size": [
+    64,
+    256
+   ],
+   "sum_im": 770.78394,
+   "sum_re": -716.0502
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 1,
+   "exec_alloc": 0,
+   "exec_min": 0.000365037,
+   "key": "fft Float64 1024×64 dims=1",
+   "kind": "fft",
+   "measure": false,
+   "n": 1024,
+   "norm": 8196.01663304968,
+   "nthreads": 1,
+   "plan_min": 4.8710000000000005e-6,
+   "shape": "batched_dim1",
+   "size": [
+    1024,
+    64
+   ],
+   "sum_im": 3638.8945142961393,
+   "sum_re": -722.7996485130234
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 2,
+   "exec_alloc": 0,
+   "exec_min": 0.001034507,
+   "key": "fft Float64 64×1024 dims=2",
+   "kind": "fft",
+   "measure": false,
+   "n": 1024,
+   "norm": 8196.01663304968,
+   "nthreads": 1,
+   "plan_min": 5.069666666666667e-6,
+   "shape": "batched_dim2",
+   "size": [
+    64,
+    1024
+   ],
+   "sum_im": -4276.611548458151,
+   "sum_re": -6046.487262695107
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 1,
+   "exec_alloc": 0,
+   "exec_min": 0.00027948700000000003,
+   "key": "rfft Float64 1024×64 dims=1",
+   "kind": "rfft",
+   "measure": false,
+   "n": 1024,
+   "norm": 5795.071162215804,
+   "nthreads": 1,
+   "plan_min": 2.9616666666666665e-6,
+   "shape": "batched_dim1",
+   "size": [
+    1024,
+    64
+   ],
+   "sum_im": -3454.1024021546286,
+   "sum_re": 6702.063523322427
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 2,
+   "exec_alloc": 0,
+   "exec_min": 0.000511769,
+   "key": "rfft Float64 64×1024 dims=2",
+   "kind": "rfft",
+   "measure": false,
+   "n": 1024,
+   "norm": 5794.821404578179,
+   "nthreads": 1,
+   "plan_min": 2.9953333333333338e-6,
+   "shape": "batched_dim2",
+   "size": [
+    64,
+    1024
+   ],
+   "sum_im": 2344.733394675785,
+   "sum_re": 434.668421733023
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 1,
+   "exec_alloc": 0,
+   "exec_min": 0.000435682,
+   "key": "fft Float32 1024×64 dims=1",
+   "kind": "fft",
+   "measure": false,
+   "n": 1024,
+   "norm": 8196.017,
+   "nthreads": 1,
+   "plan_min": 3.569e-6,
+   "shape": "batched_dim1",
+   "size": [
+    1024,
+    64
+   ],
+   "sum_im": 3638.895,
+   "sum_re": -722.8013
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 2,
+   "exec_alloc": 0,
+   "exec_min": 0.0009588210000000001,
+   "key": "fft Float32 64×1024 dims=2",
+   "kind": "fft",
+   "measure": false,
+   "n": 1024,
+   "norm": 8196.017,
+   "nthreads": 1,
+   "plan_min": 3.6666e-6,
+   "shape": "batched_dim2",
+   "size": [
+    64,
+    1024
+   ],
+   "sum_im": -4276.6084,
+   "sum_re": -6046.4883
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 1,
+   "exec_alloc": 0,
+   "exec_min": 0.000317488,
+   "key": "rfft Float32 1024×64 dims=1",
+   "kind": "rfft",
+   "measure": false,
+   "n": 1024,
+   "norm": 5807.133,
+   "nthreads": 1,
+   "plan_min": 2.3556666666666668e-6,
+   "shape": "batched_dim1",
+   "size": [
+    1024,
+    64
+   ],
+   "sum_im": 1718.6248,
+   "sum_re": -3572.9695
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 2,
+   "exec_alloc": 0,
+   "exec_min": 0.0005413750000000001,
+   "key": "rfft Float32 64×1024 dims=2",
+   "kind": "rfft",
+   "measure": false,
+   "n": 1024,
+   "norm": 5806.102,
+   "nthreads": 1,
+   "plan_min": 2.3673333333333336e-6,
+   "shape": "batched_dim2",
+   "size": [
+    64,
+    1024
+   ],
+   "sum_im": -370.50732,
+   "sum_re": -2644.3828
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 1,
+   "exec_alloc": 0,
+   "exec_min": 0.0020662840000000003,
+   "key": "fft Float64 4096×64 dims=1",
+   "kind": "fft",
+   "measure": false,
+   "n": 4096,
+   "norm": 32773.95309909925,
+   "nthreads": 1,
+   "plan_min": 1.7089000000000002e-5,
+   "shape": "batched_dim1",
+   "size": [
+    4096,
+    64
+   ],
+   "sum_im": 20980.745702878045,
+   "sum_re": 4762.931041063028
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 2,
+   "exec_alloc": 0,
+   "exec_min": 0.008776159,
+   "key": "fft Float64 64×4096 dims=2",
+   "kind": "fft",
+   "measure": false,
+   "n": 4096,
+   "norm": 32773.95309909925,
+   "nthreads": 1,
+   "plan_min": 1.6978000000000002e-5,
+   "shape": "batched_dim2",
+   "size": [
+    64,
+    4096
+   ],
+   "sum_im": -17106.446193832635,
+   "sum_re": -24185.949050780422
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 1,
+   "exec_alloc": 0,
+   "exec_min": 0.0013284730000000002,
+   "key": "rfft Float64 4096×64 dims=1",
+   "kind": "rfft",
+   "measure": false,
+   "n": 4096,
+   "norm": 23207.186599857734,
+   "nthreads": 1,
+   "plan_min": 9.492500000000001e-6,
+   "shape": "batched_dim1",
+   "size": [
+    4096,
+    64
+   ],
+   "sum_im": -23268.51438042641,
+   "sum_re": 23142.91422250623
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 2,
+   "exec_alloc": 0,
+   "exec_min": 0.003091439,
+   "key": "rfft Float64 64×4096 dims=2",
+   "kind": "rfft",
+   "measure": false,
+   "n": 4096,
+   "norm": 23206.65669672064,
+   "nthreads": 1,
+   "plan_min": 9.093000000000001e-6,
+   "shape": "batched_dim2",
+   "size": [
+    64,
+    4096
+   ],
+   "sum_im": -13187.15194098802,
+   "sum_re": 2794.8984248192755
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 1,
+   "exec_alloc": 0,
+   "exec_min": 0.0023073570000000003,
+   "key": "fft Float32 4096×64 dims=1",
+   "kind": "fft",
+   "measure": false,
+   "n": 4096,
+   "norm": 32773.953,
+   "nthreads": 1,
+   "plan_min": 1.2683500000000001e-5,
+   "shape": "batched_dim1",
+   "size": [
+    4096,
+    64
+   ],
+   "sum_im": 20980.748,
+   "sum_re": 4762.9336
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 2,
+   "exec_alloc": 0,
+   "exec_min": 0.005906135000000001,
+   "key": "fft Float32 64×4096 dims=2",
+   "kind": "fft",
+   "measure": false,
+   "n": 4096,
+   "norm": 32773.953,
+   "nthreads": 1,
+   "plan_min": 1.2634000000000001e-5,
+   "shape": "batched_dim2",
+   "size": [
+    64,
+    4096
+   ],
+   "sum_im": -17106.453,
+   "sum_re": -24185.957
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 1,
+   "exec_alloc": 0,
+   "exec_min": 0.0015328660000000001,
+   "key": "rfft Float32 4096×64 dims=1",
+   "kind": "rfft",
+   "measure": false,
+   "n": 4096,
+   "norm": 23177.416,
+   "nthreads": 1,
+   "plan_min": 7.0075e-6,
+   "shape": "batched_dim1",
+   "size": [
+    4096,
+    64
+   ],
+   "sum_im": -10793.91,
+   "sum_re": 14964.713
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 2,
+   "exec_alloc": 0,
+   "exec_min": 0.0025822460000000003,
+   "key": "rfft Float32 64×4096 dims=2",
+   "kind": "rfft",
+   "measure": false,
+   "n": 4096,
+   "norm": 23175.928,
+   "nthreads": 1,
+   "plan_min": 6.9775000000000005e-6,
+   "shape": "batched_dim2",
+   "size": [
+    64,
+    4096
+   ],
+   "sum_im": 29847.137,
+   "sum_re": -11218.569
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 1,
+   "exec_alloc": 0,
+   "exec_min": 0.011870382,
+   "key": "fft Float64 16384×64 dims=1",
+   "kind": "fft",
+   "measure": false,
+   "n": 16384,
+   "norm": 131012.44104450489,
+   "nthreads": 1,
+   "plan_min": 7.356700000000001e-5,
+   "shape": "batched_dim1",
+   "size": [
+    16384,
+    64
+   ],
+   "sum_im": 143891.14447831956,
+   "sum_re": -66865.26217989321
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 2,
+   "exec_alloc": 0,
+   "exec_min": 0.075125313,
+   "key": "fft Float64 64×16384 dims=2",
+   "kind": "fft",
+   "measure": false,
+   "n": 16384,
+   "norm": 131012.44104450489,
+   "nthreads": 1,
+   "plan_min": 7.0863e-5,
+   "shape": "batched_dim2",
+   "size": [
+    64,
+    16384
+   ],
+   "sum_im": -68425.7847753308,
+   "sum_re": -96743.7962031219
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 1,
+   "exec_alloc": 0,
+   "exec_min": 0.006731160000000001,
+   "key": "rfft Float64 16384×64 dims=1",
+   "kind": "rfft",
+   "measure": false,
+   "n": 16384,
+   "norm": 92765.10832113163,
+   "nthreads": 1,
+   "plan_min": 3.6548e-5,
+   "shape": "batched_dim1",
+   "size": [
+    16384,
+    64
+   ],
+   "sum_im": 21246.067405716796,
+   "sum_re": -164400.4030289495
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 2,
+   "exec_alloc": 0,
+   "exec_min": 0.017930812,
+   "key": "rfft Float64 64×16384 dims=2",
+   "kind": "rfft",
+   "measure": false,
+   "n": 16384,
+   "norm": 92764.9197204024,
+   "nthreads": 1,
+   "plan_min": 3.4839e-5,
+   "shape": "batched_dim2",
+   "size": [
+    64,
+    16384
+   ],
+   "sum_im": 9456.802050580454,
+   "sum_re": 9360.953363194814
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 1,
+   "exec_alloc": 0,
+   "exec_min": 0.012208567,
+   "key": "fft Float32 16384×64 dims=1",
+   "kind": "fft",
+   "measure": false,
+   "n": 16384,
+   "norm": 131012.44,
+   "nthreads": 1,
+   "plan_min": 4.9185000000000004e-5,
+   "shape": "batched_dim1",
+   "size": [
+    16384,
+    64
+   ],
+   "sum_im": 143891.08,
+   "sum_re": -66865.234
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 2,
+   "exec_alloc": 0,
+   "exec_min": 0.041215656,
+   "key": "fft Float32 64×16384 dims=2",
+   "kind": "fft",
+   "measure": false,
+   "n": 16384,
+   "norm": 131012.44,
+   "nthreads": 1,
+   "plan_min": 4.8173e-5,
+   "shape": "batched_dim2",
+   "size": [
+    64,
+    16384
+   ],
+   "sum_im": -68425.86,
+   "sum_re": -96743.805
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 1,
+   "exec_alloc": 0,
+   "exec_min": 0.0075209000000000005,
+   "key": "rfft Float32 16384×64 dims=1",
+   "kind": "rfft",
+   "measure": false,
+   "n": 16384,
+   "norm": 92749.12,
+   "nthreads": 1,
+   "plan_min": 2.4347000000000003e-5,
+   "shape": "batched_dim1",
+   "size": [
+    16384,
+    64
+   ],
+   "sum_im": -58944.223,
+   "sum_re": -27185.484
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 2,
+   "exec_alloc": 0,
+   "exec_min": 0.017910964,
+   "key": "rfft Float32 64×16384 dims=2",
+   "kind": "rfft",
+   "measure": false,
+   "n": 16384,
+   "norm": 92749.66,
+   "nthreads": 1,
+   "plan_min": 2.4488e-5,
+   "shape": "batched_dim2",
+   "size": [
+    64,
+    16384
+   ],
+   "sum_im": 27481.396,
+   "sum_re": -46793.438
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 1,
+   "exec_alloc": 0,
+   "exec_min": 0.07385838700000001,
+   "key": "fft Float64 65536×64 dims=1",
+   "kind": "fft",
+   "measure": false,
+   "n": 65536,
+   "norm": 524303.635971449,
+   "nthreads": 1,
+   "plan_min": 0.00030268600000000004,
+   "shape": "batched_dim1",
+   "size": [
+    65536,
+    64
+   ],
+   "sum_im": -164745.90392483855,
+   "sum_re": 23605.342878158757
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 2,
+   "exec_alloc": 0,
+   "exec_min": 0.562973093,
+   "key": "fft Float64 64×65536 dims=2",
+   "kind": "fft",
+   "measure": false,
+   "n": 65536,
+   "norm": 524303.6359714491,
+   "nthreads": 1,
+   "plan_min": 0.000326809,
+   "shape": "batched_dim2",
+   "size": [
+    64,
+    65536
+   ],
+   "sum_im": -273703.1391013217,
+   "sum_re": -386975.1848124868
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 1,
+   "exec_alloc": 0,
+   "exec_min": 0.029941443,
+   "key": "rfft Float64 65536×64 dims=1",
+   "kind": "rfft",
+   "measure": false,
+   "n": 65536,
+   "norm": 370720.3627814726,
+   "nthreads": 1,
+   "plan_min": 0.00014735800000000002,
+   "shape": "batched_dim1",
+   "size": [
+    65536,
+    64
+   ],
+   "sum_im": -81101.04689994126,
+   "sum_re": -174075.4797251161
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 2,
+   "exec_alloc": 0,
+   "exec_min": 0.18512963600000001,
+   "key": "rfft Float64 64×65536 dims=2",
+   "kind": "rfft",
+   "measure": false,
+   "n": 65536,
+   "norm": 370718.99601423915,
+   "nthreads": 1,
+   "plan_min": 0.000146704,
+   "shape": "batched_dim2",
+   "size": [
+    64,
+    65536
+   ],
+   "sum_im": 258630.07144465914,
+   "sum_re": 36466.32996170485
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 1,
+   "exec_alloc": 0,
+   "exec_min": 0.06529965800000001,
+   "key": "fft Float32 65536×64 dims=1",
+   "kind": "fft",
+   "measure": false,
+   "n": 65536,
+   "norm": 524303.6,
+   "nthreads": 1,
+   "plan_min": 0.00020243500000000002,
+   "shape": "batched_dim1",
+   "size": [
+    65536,
+    64
+   ],
+   "sum_im": -164745.9,
+   "sum_re": 23605.094
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 2,
+   "exec_alloc": 0,
+   "exec_min": 0.520057595,
+   "key": "fft Float32 64×65536 dims=2",
+   "kind": "fft",
+   "measure": false,
+   "n": 65536,
+   "norm": 524303.6,
+   "nthreads": 1,
+   "plan_min": 0.00020487900000000001,
+   "shape": "batched_dim2",
+   "size": [
+    64,
+    65536
+   ],
+   "sum_im": -273703.38,
+   "sum_re": -386974.84
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 1,
+   "exec_alloc": 0,
+   "exec_min": 0.035534205,
+   "key": "rfft Float32 65536×64 dims=1",
+   "kind": "rfft",
+   "measure": false,
+   "n": 65536,
+   "norm": 370733.16,
+   "nthreads": 1,
+   "plan_min": 0.00010141800000000001,
+   "shape": "batched_dim1",
+   "size": [
+    65536,
+    64
+   ],
+   "sum_im": -665970.94,
+   "sum_re": 12625.094
+  },
+  {
+   "T": "Float32",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 2,
+   "exec_alloc": 0,
+   "exec_min": 0.142937067,
+   "key": "rfft Float32 64×65536 dims=2",
+   "kind": "rfft",
+   "measure": false,
+   "n": 65536,
+   "norm": 370732.0,
+   "nthreads": 1,
+   "plan_min": 0.00010005300000000001,
+   "shape": "batched_dim2",
+   "size": [
+    64,
+    65536
+   ],
+   "sum_im": 439989.97,
+   "sum_re": -183525.03
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 1,
+   "exec_alloc": 0,
+   "exec_min": 0.005050466,
+   "key": "rfft Float64 256×4096 dims=1",
+   "kind": "rfft",
+   "measure": false,
+   "n": 256,
+   "norm": 11640.925722730257,
+   "nthreads": 1,
+   "plan_min": 1.4555e-6,
+   "shape": "batched_dim1",
+   "size": [
+    256,
+    4096
+   ],
+   "sum_im": 4845.767554722023,
+   "sum_re": 347.84713669906296
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 1,
+   "exec_alloc": 0,
+   "exec_min": 0.005070872000000001,
+   "key": "rfft Float64 1024×1024 dims=1",
+   "kind": "rfft",
+   "measure": false,
+   "n": 1024,
+   "norm": 23213.335828583906,
+   "nthreads": 1,
+   "plan_min": 2.9290000000000002e-6,
+   "shape": "batched_dim1",
+   "size": [
+    1024,
+    1024
+   ],
+   "sum_im": -4329.462276790555,
+   "sum_re": -8799.055444945072
+  },
+  {
+   "T": "Float64",
+   "api": "mul!",
+   "class": "nd",
+   "dims": 1,
+   "exec_alloc": 0,
+   "exec_min": 0.005744137000000001,
+   "key": "rfft Float64 4096×256 dims=1",
+   "kind": "rfft",
+   "measure": false,
+   "n": 4096,
+   "norm": 46391.40113902921,
+   "nthreads": 1,
+   "plan_min": 9.961500000000001e-6,
+   "shape": "batched_dim1",
+   "size": [
+    4096,
+    256
+   ],
+   "sum_im": 7792.696853255893,
+   "sum_re": -2384.3887021656483
+  }
+ ]
+}
