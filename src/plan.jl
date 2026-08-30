@@ -282,13 +282,13 @@ function _foreach_pencil(f::F, A::AbstractArray{<:Any,N}, ::Val{dim}, workers::V
     total = npre * length(Rpost)
     nt = min(length(workers), total ÷ 2)
     if nt > 1 && total * size(A, dim) >= THREAD_THRESHOLD
-        Base.@sync for c in 1:nt
+        # one chunk per worker, run on Polyester's static thread pool (no task
+        # allocation, the calling thread takes a chunk itself)
+        @batch for c in 1:nt
             lo = (c - 1) * total ÷ nt + 1
             hi = c * total ÷ nt
-            # (the task's worker gets its own name: a variable shared with the
-            # serial branch below would be captured by every task)
             wc = workers[c]
-            Threads.@spawn for k in lo:hi
+            for k in lo:hi
                 ipost, ipre = divrem(k - 1, npre)
                 f(wc, Rpre[ipre + 1], Rpost[ipost + 1])
             end
