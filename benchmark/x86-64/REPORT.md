@@ -1,6 +1,6 @@
 # FFTA.jl vs FFTW.jl benchmark report
 
-Generated 2026-08-29 21:00 UTC by `benchmark/report.jl` from `baseline.json`.
+Generated 2026-08-30 01:06 UTC by `benchmark/report.jl` from `baseline_merged.json`.
 
 ## Environment
 
@@ -46,10 +46,10 @@ Generated 2026-08-29 21:00 UTC by `benchmark/report.jl` from `baseline.json`.
 
 | type | pow2 | smooth | prime | awkward | 2D | 3D | batched dim=1 | batched dim=2 |
 |:--|--:|--:|--:|--:|--:|--:|--:|--:|
-| ComplexF64 fft | 3.09× (1.4–9.4) | 13.14× (3.6–30.2) | 7.10× (3.6–19.9) | 5.98× (3.9–9.8) | 5.77× (1.1–18.1) | 6.98× (4.4–20.8) | 3.18× (1.8–7.3) | 1.89× (1.3–3.3) |
-| ComplexF32 fft | 4.68× (2.1–11.2) | 16.80× (4.8–43.7) | 9.42× (5.3–15.3) | 8.66× (4.6–13.0) | 5.22× (1.0–16.3) | 11.61× (9.1–17.5) | 6.47× (3.7–10.3) | 2.22× (1.2–10.9) |
-| Float64 rfft | 3.83× (1.6–7.8) | 13.67× (3.8–34.9) | 5.77× (2.8–11.5) | 6.09× (4.2–9.3) | 14.86× (6.3–45.6) | ✗ unsupported | 6.86× (4.0–9.1) | 2.41× (1.1–9.0) |
-| Float32 rfft | 5.54× (2.7–10.6) | 14.75× (5.1–36.8) | 6.08× (2.9–9.9) | 8.37× (4.9–11.9) | 14.13× (8.5–20.1) | ✗ unsupported | 7.86× (5.2–9.9) | 2.62× (1.0–8.9) |
+| ComplexF64 fft | 3.09× (1.4–9.4) | 13.14× (3.6–30.2) | 7.58× (3.6–19.9) | 5.98× (3.9–9.8) | 5.77× (1.1–18.1) | 6.98× (4.4–20.8) | 3.18× (1.8–7.3) | 1.89× (1.3–3.3) |
+| ComplexF32 fft | 4.68× (2.1–11.2) | 16.80× (4.8–43.7) | 10.06× (5.3–20.1) | 8.66× (4.6–13.0) | 5.22× (1.0–16.3) | 11.61× (9.1–17.5) | 6.47× (3.7–10.3) | 2.22× (1.2–10.9) |
+| Float64 rfft | 3.83× (1.6–7.8) | 13.67× (3.8–34.9) | 6.12× (2.8–11.5) | 6.09× (4.2–9.3) | 14.86× (6.3–45.6) | ✗ unsupported | 6.86× (4.0–9.1) | 2.41× (1.1–9.0) |
+| Float32 rfft | 5.54× (2.7–10.6) | 14.75× (5.1–36.8) | 6.21× (2.9–9.9) | 8.37× (4.9–11.9) | 14.13× (8.5–20.1) | ✗ unsupported | 7.86× (5.2–9.9) | 2.62× (1.0–8.9) |
 
 Cells are `geomean (min–max)`. ✗ = FFTA threw (unsupported).
 
@@ -69,7 +69,7 @@ Cells are `geomean (min–max)`. ✗ = FFTA threw (unsupported).
 
 ## 1D transforms
 
-<details open><summary><b>1D ComplexF64 fft</b> (92 sizes)</summary>
+<details open><summary><b>1D ComplexF64 fft</b> (97 sizes)</summary>
 
 | n | class | FFTW exec | FFTA exec | **exec ratio** | FFTW plan | FFTA plan | cold ratio | FFTA alloc/exec | rel. err |
 |--:|:--|--:|--:|--:|--:|--:|--:|--:|--:|
@@ -78,9 +78,14 @@ Cells are `geomean (min–max)`. ✗ = FFTA threw (unsupported).
 | 12 | smooth | 24 ns | 309 ns | **13.09×** | 3.45 µs | 278 ns | 0.17× | 0 | 1.9e-16 |
 | 16 | pow2 | 28 ns | 140 ns | **4.99×** | 3.31 µs | 81 ns | 0.07× | 0 | 1.9e-16 |
 | 17 | prime | 232 ns | 2.01 µs | **8.67×** | 2.93 µs | 84 ns | 0.56× | 0 | 2.2e-15 |
+| 23 | prime | 393 ns | 3.54 µs | **9.00×** | 2.76 µs | 81 ns | 1.14× | 0 | 2.6e-15 |
 | 25 | smooth | 91 ns | 2.73 µs | **29.89×** | 7.53 µs | 210 ns | 0.28× | 0 | 8.1e-16 |
+| 29 | prime | 635 ns | 5.49 µs | **8.65×** | 2.72 µs | 79 ns | 1.69× | 0 | 3.2e-15 |
+| 31 | prime | 710 ns | 6.25 µs | **8.80×** | 2.74 µs | 79 ns | 1.82× | 0 | 2.6e-15 |
 | 32 | pow2 | 59 ns | 554 ns | **9.45×** | 3.29 µs | 59 ns | 0.20× | 0 | 2.2e-16 |
+| 37 | prime | 1.14 µs | 8.79 µs | **7.74×** | 60.61 µs | 81 ns | 0.13× | 0 | 4.9e-15 |
 | 41 | prime | 1.18 µs | 10.79 µs | **9.13×** | 28.43 µs | 80 ns | 0.33× | 0 | 3.8e-15 |
+| 43 | prime | 717 ns | 11.82 µs | **16.48×** | 2.80 µs | 80 ns | 2.80× | 0 | 5.8e-15 |
 | 54 | smooth | 238 ns | 1.77 µs | **7.42×** | 14.13 µs | 311 ns | 0.15× | 0 | 5.2e-16 |
 | 60 | smooth | 199 ns | 4.65 µs | **23.34×** | 7.12 µs | 595 ns | 0.74× | 0 | 7.0e-16 |
 | 61 | prime | 1.85 µs | 23.44 µs | **12.65×** | 28.29 µs | 80 ns | 0.86× | 0 | 6.2e-15 |
@@ -168,7 +173,7 @@ Cells are `geomean (min–max)`. ✗ = FFTA threw (unsupported).
 
 </details>
 
-<details><summary><b>1D ComplexF32 fft</b> (92 sizes)</summary>
+<details><summary><b>1D ComplexF32 fft</b> (97 sizes)</summary>
 
 | n | class | FFTW exec | FFTA exec | **exec ratio** | FFTW plan | FFTA plan | cold ratio | FFTA alloc/exec | rel. err |
 |--:|:--|--:|--:|--:|--:|--:|--:|--:|--:|
@@ -177,9 +182,14 @@ Cells are `geomean (min–max)`. ✗ = FFTA threw (unsupported).
 | 12 | smooth | 40 ns | 250 ns | **6.24×** | 3.43 µs | 280 ns | 0.15× | 0 | 8.6e-08 |
 | 16 | pow2 | 62 ns | 134 ns | **2.15×** | 3.29 µs | 81 ns | 0.07× | 0 | 9.9e-08 |
 | 17 | prime | 207 ns | 2.22 µs | **10.72×** | 2.97 µs | 78 ns | 0.72× | 0 | 1.5e-06 |
+| 23 | prime | 311 ns | 3.98 µs | **12.79×** | 2.69 µs | 82 ns | 1.36× | 0 | 1.5e-06 |
 | 25 | smooth | 92 ns | 2.04 µs | **22.23×** | 7.00 µs | 255 ns | 0.32× | 0 | 4.9e-07 |
+| 29 | prime | 516 ns | 6.24 µs | **12.10×** | 2.69 µs | 82 ns | 1.96× | 0 | 2.0e-06 |
+| 31 | prime | 575 ns | 7.10 µs | **12.35×** | 2.69 µs | 81 ns | 2.17× | 0 | 2.1e-06 |
 | 32 | pow2 | 95 ns | 511 ns | **5.40×** | 3.36 µs | 78 ns | 0.14× | 0 | 1.1e-07 |
+| 37 | prime | 1.06 µs | 10.07 µs | **9.50×** | 52.05 µs | 80 ns | 0.17× | 0 | 2.3e-06 |
 | 41 | prime | 1.15 µs | 12.34 µs | **10.73×** | 44.11 µs | 81 ns | 0.24× | 0 | 2.4e-06 |
+| 43 | prime | 673 ns | 13.54 µs | **20.11×** | 1.81 µs | 79 ns | 3.49× | 0 | 2.7e-06 |
 | 54 | smooth | 231 ns | 1.64 µs | **7.10×** | 13.97 µs | 313 ns | 0.13× | 0 | 2.0e-07 |
 | 60 | smooth | 148 ns | 3.78 µs | **25.47×** | 7.39 µs | 575 ns | 0.55× | 0 | 3.9e-07 |
 | 61 | prime | 1.75 µs | 26.77 µs | **15.27×** | 43.38 µs | 82 ns | 0.52× | 0 | 3.6e-06 |
@@ -267,7 +277,7 @@ Cells are `geomean (min–max)`. ✗ = FFTA threw (unsupported).
 
 </details>
 
-<details open><summary><b>1D Float64 rfft</b> (92 sizes)</summary>
+<details open><summary><b>1D Float64 rfft</b> (97 sizes)</summary>
 
 | n | class | FFTW exec | FFTA exec | **exec ratio** | FFTW plan | FFTA plan | cold ratio | FFTA alloc/exec | rel. err |
 |--:|:--|--:|--:|--:|--:|--:|--:|--:|--:|
@@ -276,9 +286,14 @@ Cells are `geomean (min–max)`. ✗ = FFTA threw (unsupported).
 | 12 | smooth | 29 ns | 336 ns | **11.78×** | 3.49 µs | 4.88 µs | 1.87× | 176 B | 1.5e-16 |
 | 16 | pow2 | 34 ns | 262 ns | **7.82×** | 3.08 µs | 6.10 µs | 2.02× | 208 B | 1.3e-16 |
 | 17 | prime | 227 ns | 993 ns | **4.38×** | 9.17 µs | 6.13 µs | 0.76× | 544 B | 1.3e-15 |
+| 23 | prime | 228 ns | 1.68 µs | **7.39×** | 9.08 µs | 5.96 µs | 0.78× | 688 B | 2.3e-15 |
 | 25 | smooth | 82 ns | 2.30 µs | **28.03×** | 3.44 µs | 6.33 µs | 2.39× | 752 B | 8.0e-16 |
+| 29 | prime | 351 ns | 2.57 µs | **7.31×** | 8.47 µs | 5.96 µs | 0.96× | 832 B | 1.9e-15 |
+| 31 | prime | 381 ns | 2.90 µs | **7.61×** | 8.51 µs | 6.00 µs | 0.95× | 896 B | 2.1e-15 |
 | 32 | pow2 | 75 ns | 313 ns | **4.16×** | 12.50 µs | 6.10 µs | 0.42× | 336 B | 2.2e-16 |
+| 37 | prime | 512 ns | 4.02 µs | **7.86×** | 7.56 µs | 5.98 µs | 1.03× | 1.0 KiB | 2.9e-15 |
 | 41 | prime | 636 ns | 4.89 µs | **7.69×** | 9.22 µs | 6.03 µs | 1.12× | 1.1 KiB | 3.1e-15 |
+| 43 | prime | 658 ns | 5.38 µs | **8.18×** | 8.97 µs | 5.89 µs | 1.17× | 1.2 KiB | 4.7e-15 |
 | 54 | smooth | 143 ns | 833 ns | **5.81×** | 17.45 µs | 6.13 µs | 0.38× | 528 B | 4.0e-16 |
 | 60 | smooth | 164 ns | 2.67 µs | **16.30×** | 25.80 µs | 6.73 µs | 0.33× | 576 B | 6.8e-16 |
 | 61 | prime | 1.32 µs | 10.48 µs | **7.92×** | 9.11 µs | 6.08 µs | 1.60× | 1.6 KiB | 5.2e-15 |
@@ -366,7 +381,7 @@ Cells are `geomean (min–max)`. ✗ = FFTA threw (unsupported).
 
 </details>
 
-<details><summary><b>1D Float32 rfft</b> (92 sizes)</summary>
+<details><summary><b>1D Float32 rfft</b> (97 sizes)</summary>
 
 | n | class | FFTW exec | FFTA exec | **exec ratio** | FFTW plan | FFTA plan | cold ratio | FFTA alloc/exec | rel. err |
 |--:|:--|--:|--:|--:|--:|--:|--:|--:|--:|
@@ -375,9 +390,14 @@ Cells are `geomean (min–max)`. ✗ = FFTA threw (unsupported).
 | 12 | smooth | 30 ns | 263 ns | **8.78×** | 3.44 µs | 6.27 µs | 1.85× | 112 B | 6.7e-08 |
 | 16 | pow2 | 34 ns | 211 ns | **6.30×** | 3.12 µs | 5.99 µs | 1.96× | 128 B | 9.1e-08 |
 | 17 | prime | 149 ns | 851 ns | **5.69×** | 9.19 µs | 6.03 µs | 0.76× | 320 B | 1.2e-06 |
+| 23 | prime | 287 ns | 1.55 µs | **5.39×** | 8.59 µs | 5.97 µs | 0.81× | 400 B | 1.1e-06 |
 | 25 | smooth | 82 ns | 1.64 µs | **20.04×** | 3.33 µs | 6.31 µs | 2.22× | 416 B | 1.8e-07 |
+| 29 | prime | 388 ns | 2.49 µs | **6.41×** | 8.42 µs | 5.95 µs | 0.95× | 464 B | 8.5e-07 |
+| 31 | prime | 419 ns | 2.81 µs | **6.72×** | 8.65 µs | 5.94 µs | 0.96× | 496 B | 2.1e-06 |
 | 32 | pow2 | 104 ns | 277 ns | **2.67×** | 12.96 µs | 5.98 µs | 0.43× | 192 B | 8.6e-08 |
+| 37 | prime | 551 ns | 4.05 µs | **7.35×** | 8.63 µs | 5.94 µs | 1.05× | 576 B | 9.5e-07 |
 | 41 | prime | 644 ns | 4.97 µs | **7.71×** | 9.51 µs | 5.98 µs | 1.09× | 624 B | 2.0e-06 |
+| 43 | prime | 695 ns | 5.49 µs | **7.91×** | 8.78 µs | 5.95 µs | 1.18× | 640 B | 1.8e-06 |
 | 54 | smooth | 108 ns | 760 ns | **7.01×** | 11.61 µs | 6.10 µs | 0.49× | 288 B | 1.6e-07 |
 | 60 | smooth | 182 ns | 1.77 µs | **9.76×** | 25.68 µs | 6.71 µs | 0.32× | 304 B | 4.4e-07 |
 | 61 | prime | 1.24 µs | 11.17 µs | **9.02×** | 9.36 µs | 5.97 µs | 1.62× | 880 B | 2.5e-06 |
@@ -725,11 +745,11 @@ Cells are `geomean (min–max)`. ✗ = FFTA threw (unsupported).
 |:--|:--|:--|--:|
 | 1D complex fft, mul! | `mul!` | yes | 0 (max 0) |
 | 1D complex fft, prime/awkward (Bluestein) | `mul!` | no | 768.3 KiB (max 192.00 MiB) |
-| 1D rfft | `*` | no | 128.1 KiB (max 231.55 MiB) |
+| 1D rfft | `*` | no | 110.9 KiB (max 231.55 MiB) |
 | 2D/3D complex fft, mul! | `mul!` | no | 2.2 KiB (max 9.05 MiB) |
 | 2D rfft | `*` | no | 2.51 MiB (max 160.11 MiB) |
 | batched complex fft, mul! | `mul!` | yes | 0 (max 0) |
 | batched rfft | `*` | no | 2.03 MiB (max 64.51 MiB) |
 
-FFTW planned execution allocates 0 bytes in all cases except: 8 fft, 8 rfft, 8 fft, 8 rfft, 8×8 fft, 8×8 rfft, 8×8 fft, 8×8 rfft, 8×8×8 fft, 8×8×8 rfft, 8×8×8 fft, 8×8×8 rfft, 64×64 fft, 64×64 rfft, 64×64 fft, 64×64 rfft, 65536 fft, 131072 fft, 262144 fft, 524288 fft, 1048576 fft, 2097152 fft, 4194304 fft, 256×256 fft, 512×512 fft, 1024×1024 fft, 2048×2048 fft, 1024×64 fft, 4096×64 fft, 16384×64 fft, 65536×64 fft
+FFTW planned execution allocates 0 bytes in all cases except: 8 fft, 8 rfft, 8 fft, 8 rfft, 8×8 fft, 8×8 rfft, 8×8 fft, 8×8 rfft, 8×8×8 fft, 8×8×8 rfft, 8×8×8 fft, 8×8×8 rfft, 64×64 fft, 64×64 rfft, 64×64 fft, 64×64 rfft, 65536 fft, 131072 fft, 262144 fft, 524288 fft, 1048576 fft, 2097152 fft, 4194304 fft, 256×256 fft, 512×512 fft, 1024×1024 fft, 2048×2048 fft, 1024×64 fft, 4096×64 fft, 16384×64 fft, 65536×64 fft, 23 fft, 23 rfft, 23 fft, 23 rfft
 
