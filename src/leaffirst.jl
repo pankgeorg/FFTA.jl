@@ -10,7 +10,8 @@
 # transform.
 #
 # Above `LEAFFIRST_MIN` the transform is therefore computed as `P = N ÷ B`
-# sub-transforms of size `B` (decimated inputs at stride `P`), taken in input
+# sub-transforms of size `B` (`LEAFFIRST_BLOCK` or half of it, a level of the
+# recursion; decimated inputs at stride `P`), taken in input
 # order in groups of `G` — one cache line of consecutive inputs — which are
 # gathered into a contiguous buffer and transformed in cache, followed by the
 # `log4(P)` remaining butterfly passes over the whole array. The output is
@@ -47,17 +48,19 @@ function _pow2_leaffirst!(
     N::Int, start_out::Int, start_in::Int, stride_in::Int,
     d::Direction, tw::AbstractVector{T}, toff::Int, buf::AbstractVector{T}
 ) where {T<:Complex, U}
-    B = LEAFFIRST_BLOCK
+    # the sub-transform size is the recursion's own block size at the level
+    # nearest LEAFFIRST_BLOCK (LEAFFIRST_BLOCK or half of it, depending on the
+    # parity of log2 N), so that P = N ÷ B is a power of 4
     G = _leaffirst_group(T)
+    B = N
+    toffB = toff
+    while B > LEAFFIRST_BLOCK
+        toffB += 3 * (B ÷ 4)
+        B ÷= 4
+    end
     P = N ÷ B
     digits = trailing_zeros(P) ÷ 2
-    # (N and B are powers of 4 apart, and P ≥ G: guaranteed by LEAFFIRST_MIN ≥ G·B·4)
-    toffB = toff
-    M = N
-    while M > B
-        toffB += 3 * (M ÷ 4)
-        M ÷= 4
-    end
+    # (P ≥ G is guaranteed by LEAFFIRST_MIN ≥ 4·G·LEAFFIRST_BLOCK)
     # 1. sub-transforms of size B, in input order, G at a time through `buf`
     for q0 in 0:G:P-1
         @inbounds for j in 0:B-1
