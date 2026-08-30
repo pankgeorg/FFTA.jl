@@ -100,48 +100,9 @@ let x = randn(ComplexF64, 8), r = randn(Float64, 8)
 end
 
 # ---------------------------------------------------------------------------
-# Size classes
+# Size classes (shared with compare3.jl)
 # ---------------------------------------------------------------------------
-function size_classes(maxlog2)
-    nmax = 1 << maxlog2
-    pow2   = [1 << k for k in 3:maxlog2]
-    # 2^a 3^b 5^c 7^d, not powers of two, spread log-uniformly
-    smooth_all = Int[]
-    for a in 0:maxlog2, b in 0:14, c in 0:9, d in 0:8
-        n = 2^a * 3^b * 5^c * 7^d
-        (n <= nmax && n >= 8 && !ispow2(n)) && push!(smooth_all, n)
-    end
-    sort!(unique!(smooth_all))
-    smooth = Int[]
-    for t in exp.(range(log(12), log(nmax), length = 18))
-        push!(smooth, smooth_all[argmin(abs.(log.(smooth_all) .- log(t)))])
-    end
-    # explicitly include some "classic" smooth sizes
-    for n in (12, 60, 120, 360, 720, 1000, 1000_000)
-        n <= nmax && push!(smooth, n)
-    end
-    sort!(unique!(smooth))
-    # primes: below (DFT path) and above (Bluestein path) the cutoff of 73
-    prime = Int[]
-    for t in exp.(range(log(7), log(nmax), length = 16))
-        push!(prime, nextprime(round(Int, t)))
-    end
-    # straddle the DFT/Bluestein crossover: the O(n²) leaf is used below the
-    # cutoff (73 originally, 29 since the twiddle-table work), so sample the
-    # band 23–46 as well as 61–79
-    for n in (23, 29, 31, 37, 43, 61, 71, 73, 79)
-        push!(prime, n)
-    end
-    filter!(<=(nmax), prime); sort!(unique!(prime))
-    # awkward: (prime > cutoff) × small factor
-    awk = Int[]
-    for p in (101, 1009, 4099, 16411, 65537, 262147), f in (2, 3, 4, 6, 16)
-        n = p * f
-        n <= nmax && push!(awk, n)
-    end
-    sort!(unique!(awk))
-    return (pow2 = pow2, smooth = smooth, prime = prime, awkward = awk)
-end
+include(joinpath(@__DIR__, "cases.jl"))
 
 const CLASSES = size_classes(MAXLOG2)
 
@@ -187,12 +148,7 @@ function record!(entry; complete::Bool = false)
     end
 end
 
-function class_of(n)
-    for (k, v) in pairs(CLASSES)
-        n in v && return String(k)
-    end
-    return "other"
-end
+class_of(n) = class_of(CLASSES, n)
 
 sizestr(sz) = join(sz, "x")
 
