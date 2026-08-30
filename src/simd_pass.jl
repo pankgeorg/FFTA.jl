@@ -44,8 +44,8 @@ end
     return dupr(w1), dupi(w1) * sign, dupr(w2), dupi(w2) * sign, dupr(w3), dupi(w3) * sign
 end
 
-_simd_contiguous(out::Array) = true
-_simd_contiguous(out::SubArray) = Base.iscontiguous(out)
+# unit-stride dense storage that `pointer` can address
+_simd_contiguous(out::StridedVector) = stride(out, 1) == 1
 _simd_contiguous(out) = false
 
 """
