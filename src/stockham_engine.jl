@@ -484,6 +484,118 @@ function _stagep!(yre::Vector{S}, yim::Vector{S}, xre, xim, n::Int, s::Int,
     return nothing
 end
 
+
+# ---------------------------------------------------------------------------
+# fused edges: the first small radix-4 stage can read the interleaved complex
+# input directly (deinterleave in registers), and a twiddle-free final stage
+# can write interleaved complex output — each saves one full conversion pass.
+# ---------------------------------------------------------------------------
+function _stage4_first_fused!(yre::Vector{S}, yim::Vector{S}, x::Vector{Complex{S}}, start_in::Int,
+                              n::Int, tw::StockhamStage{S}, ::Val{D}) where {S,D}
+    W = _stockham_width(S)
+    m = n >> 2
+    twr = tw.twr; twi = tw.twi
+    V = Vec{W,S}
+    sz = sizeof(S)
+    GC.@preserve x begin
+        px = Ptr{S}(pointer(x)) + 2sz * (start_in - 1)
+        @inbounds for f in 1:W:m
+            b0 = 2 * (f - 1)
+            u = vload(V, px + sz * b0);            v = vload(V, px + sz * (b0 + W))
+            ar, ai = _sdeint2(u, v)
+            u = vload(V, px + sz * (b0 + 2m));     v = vload(V, px + sz * (b0 + 2m + W))
+            br, bi = _sdeint2(u, v)
+            u = vload(V, px + sz * (b0 + 4m));     v = vload(V, px + sz * (b0 + 4m + W))
+            cr, ci = _sdeint2(u, v)
+            u = vload(V, px + sz * (b0 + 6m));     v = vload(V, px + sz * (b0 + 6m + W))
+            dr, di = _sdeint2(u, v)
+            w1r = vload(V, twr, f);       w1i = vload(V, twi, f)
+            w2r = vload(V, twr, m + f);   w2i = vload(V, twi, m + f)
+            w3r = vload(V, twr, 2m + f);  w3i = vload(V, twi, 2m + f)
+            y0r, y0i, t1r, t1i, t2r, t2i, t3r, t3i = _sbf4(ar, ai, br, bi, cr, ci, dr, di, Val(D))
+            y1r, y1i = _scmul(w1r, w1i, t1r, t1i)
+            y2r, y2i = _scmul(w2r, w2i, t2r, t2i)
+            y3r, y3i = _scmul(w3r, w3i, t3r, t3i)
+            o0r, o1r, o2r, o3r = _sileave4(y0r, y1r, y2r, y3r, Val(1))
+            o0i, o1i, o2i, o3i = _sileave4(y0i, y1i, y2i, y3i, Val(1))
+            base = 4 * (f - 1)
+            vstore(o0r, yre, base + 1);      vstore(o0i, yim, base + 1)
+            vstore(o1r, yre, base + W + 1);  vstore(o1i, yim, base + W + 1)
+            vstore(o2r, yre, base + 2W + 1); vstore(o2i, yim, base + 2W + 1)
+            vstore(o3r, yre, base + 3W + 1); vstore(o3i, yim, base + 3W + 1)
+        end
+    end
+    return nothing
+end
+
+# twiddle-free final stages writing interleaved complex output
+function _stage4_last_fused!(y::Vector{Complex{S}}, start_out::Int, xre::Vector{S}, xim::Vector{S},
+                             s::Int, ::Val{D}) where {S,D}
+    W = _stockham_width(S)
+    V = Vec{W,S}
+    sz = sizeof(S)
+    GC.@preserve y begin
+        py = Ptr{S}(pointer(y)) + 2sz * (start_out - 1)
+        @inbounds for q0 in 1:W:s
+            q = q0 + W - 1 <= s ? q0 : s - W + 1
+            e = _sbf4(vload(V, xre, q), vload(V, xim, q), vload(V, xre, s + q), vload(V, xim, s + q),
+                      vload(V, xre, 2s + q), vload(V, xim, 2s + q), vload(V, xre, 3s + q), vload(V, xim, 3s + q), Val(D))
+            Base.Cartesian.@nexprs 4 j -> begin
+                lo, hi = _sint2(e[2j-1], e[2j])
+                c0 = (j - 1) * s + q - 1
+                vstore(lo, py + sz * 2c0)
+                vstore(hi, py + sz * (2c0 + W))
+            end
+        end
+    end
+    return nothing
+end
+function _stage8_last_fused!(y::Vector{Complex{S}}, start_out::Int, xre::Vector{S}, xim::Vector{S},
+                             s::Int, ::Val{D}) where {S,D}
+    W = _stockham_width(S)
+    V = Vec{W,S}
+    c = V(S(sqrt(0.5)))
+    sz = sizeof(S)
+    GC.@preserve y begin
+        py = Ptr{S}(pointer(y)) + 2sz * (start_out - 1)
+        @inbounds for q0 in 1:W:s
+            q = q0 + W - 1 <= s ? q0 : s - W + 1
+            e = _sbf4(vload(V, xre, q), vload(V, xim, q), vload(V, xre, 2s + q), vload(V, xim, 2s + q),
+                      vload(V, xre, 4s + q), vload(V, xim, 4s + q), vload(V, xre, 6s + q), vload(V, xim, 6s + q), Val(D))
+            o = _sbf4(vload(V, xre, s + q), vload(V, xim, s + q), vload(V, xre, 3s + q), vload(V, xim, 3s + q),
+                      vload(V, xre, 5s + q), vload(V, xim, 5s + q), vload(V, xre, 7s + q), vload(V, xim, 7s + q), Val(D))
+            t1r, t1i, t2r, t2i, t3r, t3i = _bf8_tail(o, c, Val(D))
+            ys = (e[1] + o[1], e[2] + o[2], e[3] + t1r, e[4] + t1i, e[5] + t2r, e[6] + t2i, e[7] + t3r, e[8] + t3i,
+                  e[1] - o[1], e[2] - o[2], e[3] - t1r, e[4] - t1i, e[5] - t2r, e[6] - t2i, e[7] - t3r, e[8] - t3i)
+            Base.Cartesian.@nexprs 8 j -> begin
+                lo, hi = _sint2(ys[2j-1], ys[2j])
+                c0 = (j - 1) * s + q - 1
+                vstore(lo, py + sz * 2c0)
+                vstore(hi, py + sz * (2c0 + W))
+            end
+        end
+    end
+    return nothing
+end
+function _stage2_last_fused!(y::Vector{Complex{S}}, start_out::Int, xre::Vector{S}, xim::Vector{S}, s::Int) where {S}
+    W = _stockham_width(S)
+    V = Vec{W,S}
+    sz = sizeof(S)
+    GC.@preserve y begin
+        py = Ptr{S}(pointer(y)) + 2sz * (start_out - 1)
+        @inbounds for q0 in 1:W:s
+            q = q0 + W - 1 <= s ? q0 : s - W + 1
+            ar = vload(V, xre, q); ai = vload(V, xim, q)
+            br = vload(V, xre, s + q); bi = vload(V, xim, s + q)
+            lo, hi = _sint2(ar + br, ai + bi)
+            vstore(lo, py + sz * 2 * (q - 1)); vstore(hi, py + sz * (2 * (q - 1) + W))
+            lo, hi = _sint2(ar - br, ai - bi)
+            c0 = s + q - 1
+            vstore(lo, py + sz * 2c0); vstore(hi, py + sz * (2c0 + W))
+        end
+    end
+    return nothing
+end
 # ---------------------------------------------------------------------------
 # interleaved-complex edges and the driver
 # ---------------------------------------------------------------------------
@@ -543,8 +655,25 @@ function _stockham_exec!(out::AbstractVector{Complex{S}}, in::AbstractVector, st
                          d::Direction, ch::StockhamChain{S}) where {S}
     n = ch.n
     D = direction_sign(d)
+    W = _stockham_width(S)
     xr, xi, yr, yi = ch.are, ch.aim, ch.bre, ch.bim
-    if in isa AbstractVector{Complex{S}}
+    nstages = length(ch.stages)
+    # fuse the deinterleave into a first small radix-4 stage when possible
+    first_fused = in isa Vector{Complex{S}} && nstages > 1 && ch.stages[1].R == 4 &&
+                  ch.stages[1].small && (n >> 2) % W == 0 && n >> 2 >= W
+    # fuse the interleave into a twiddle-free final pow2 stage when possible
+    laststage = ch.stages[nstages]
+    last_fused = out isa Vector{Complex{S}} && nstages > 1 &&
+                 (laststage.R == 2 || laststage.R == 4 || laststage.R == 8) &&
+                 !laststage.small && n ÷ laststage.R >= W
+    s = 1
+    ncur = n
+    if first_fused
+        _stage4_first_fused!(yr, yi, in::Vector{Complex{S}}, start_in, n, ch.stages[1], D == -1 ? Val(-1) : Val(1))
+        s = 4
+        ncur >>= 2
+        xr, xi, yr, yi = yr, yi, xr, xi
+    elseif in isa AbstractVector{Complex{S}}
         _sdeint_all!(xr, xi, in, start_in, n)
     else
         @inbounds for c in 1:n
@@ -552,9 +681,8 @@ function _stockham_exec!(out::AbstractVector{Complex{S}}, in::AbstractVector, st
             xi[c] = S(imag(in[start_in+c-1]))
         end
     end
-    s = 1
-    ncur = n
-    @inbounds for tw in ch.stages
+    @inbounds for k in (first_fused ? 2 : 1):(last_fused ? nstages - 1 : nstages)
+        tw = ch.stages[k]
         R = tw.R
         if R == 4
             _stage4!(yr, yi, xr, xi, ncur, s, tw, D == -1 ? Val(-1) : Val(1))
@@ -577,7 +705,18 @@ function _stockham_exec!(out::AbstractVector{Complex{S}}, in::AbstractVector, st
         ncur ÷= R
         xr, xi, yr, yi = yr, yi, xr, xi
     end
-    _sint_all!(out, start_out, xr, xi, n)
+    if last_fused
+        yv = out::Vector{Complex{S}}
+        if laststage.R == 4
+            _stage4_last_fused!(yv, start_out, xr, xi, s, D == -1 ? Val(-1) : Val(1))
+        elseif laststage.R == 8
+            _stage8_last_fused!(yv, start_out, xr, xi, s, D == -1 ? Val(-1) : Val(1))
+        else
+            _stage2_last_fused!(yv, start_out, xr, xi, s)
+        end
+    else
+        _sint_all!(out, start_out, xr, xi, n)
+    end
     return nothing
 end
 @inline _stagep_dir!(yr, yi, xr, xi, n, s, tw, vp, D) =
