@@ -18,7 +18,9 @@ function fft_kernel!(
         N = root.sz
         tw = g.twiddles[idx]
         if t === DFT
-            fft_dft!(out, in, N, start_out, s_out, start_in, s_in, tw)
+            # small odd primes have straight-line codelets (see odd_codelets.jl)
+            _odd_codelet!(out, in, N, start_out, s_out, start_in, s_in, d) ||
+                fft_dft!(out, in, N, start_out, s_out, start_in, s_in, tw)
         elseif t === POW2RADIX4_FFT
             fft_pow2_radix4!(out, in, N, start_out, s_out, start_in, s_in, d, tw, 0)
         elseif t === POW3_FFT

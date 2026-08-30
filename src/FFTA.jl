@@ -12,6 +12,7 @@ using Reexport: @reexport
 include("callgraph.jl")
 include("singleton_twiddle.jl")
 include("codelets.jl")
+include("odd_codelets.jl")
 include("algos.jl")
 include("plan.jl")
 
@@ -22,7 +23,7 @@ using PrecompileTools: @setup_workload, @compile_workload
 @setup_workload begin
     @compile_workload begin
         for T in (Float64, Float32)
-            for n in (8, 16, 32, 64, 128, 256)
+            for n in (8, 16, 32, 64, 128, 256, 5, 7, 11, 13)
                 x = ones(Complex{T}, n)
                 y = AbstractFFTs.fft(x)
                 AbstractFFTs.bfft(y)
