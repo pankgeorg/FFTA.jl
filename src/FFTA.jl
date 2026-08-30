@@ -23,7 +23,7 @@ using PrecompileTools: @setup_workload, @compile_workload
 @setup_workload begin
     @compile_workload begin
         for T in (Float64, Float32)
-            for n in (8, 16, 32, 64, 128, 256, 5, 7, 11, 13)
+            for n in (8, 16, 32, 64, 128, 256, 5, 7, 11, 13, 25, 49)
                 x = ones(Complex{T}, n)
                 y = AbstractFFTs.fft(x)
                 AbstractFFTs.bfft(y)

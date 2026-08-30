@@ -27,6 +27,10 @@ function fft_kernel!(
             _m_120 = cispi(T(2) / 3)
             m_120 = d === FFT_FORWARD ? _m_120 : conj(_m_120)
             fft_pow3!(out, in, N, start_out, s_out, start_in, s_in, m_120, d, tw, 0)
+        elseif t === POW5_FFT
+            fft_powr!(out, in, N, start_out, s_out, start_in, s_in, d, tw, 0, Val(5))
+        elseif t === POW7_FFT
+            fft_powr!(out, in, N, start_out, s_out, start_in, s_in, d, tw, 0, Val(7))
         elseif t === BLUESTEIN
             fft_bluestein!(out, in, d, N, start_out, s_out, start_in, s_in, g.bluestein[g.blue_index[idx]])
         else
@@ -328,6 +332,54 @@ fft_pow3!(out::AbstractVector{T}, in::AbstractVector, N::Int, start_out::Int, st
           start_in::Int, stride_in::Int, minus120::T, d::Direction) where {T} =
     fft_pow3!(out, in, N, start_out, stride_out, start_in, stride_in, minus120, d, pow3_twiddles(T, N, d), 0)
 
+
+"""
+$(TYPEDSIGNATURES)
+Radix-`R` FFT for powers of 5 and 7 (`Float32`/`Float64` elements), in place:
+the `R` decimated sub-transforms are computed recursively, then each group of
+`R` outputs is multiplied by its twiddles and combined with the `R`-point
+codelet applied in place (see `odd_codelets.jl`). Same structure as
+`fft_pow3!`; no composite step and no workspace.
+
+# Arguments
+- `out`: Output vector
+- `in`: Input vector (real or complex)
+- `N`: Size of the transform (a power of `R`)
+- `start_out`, `stride_out`, `start_in`, `stride_in`: as in `fft_pow2_radix4!`
+- `d`: Direction of the transform
+- `tw`: Twiddle table, see `powr_twiddles`
+- `toff`: Offset of the current recursion level in `tw`
+"""
+function fft_powr!(
+    out::AbstractVector{T}, in::AbstractVector{U},
+    N::Int,
+    start_out::Int, stride_out::Int,
+    start_in::Int, stride_in::Int,
+    d::Direction,
+    tw::AbstractVector{T}, toff::Int,
+    ::Val{R}
+) where {T<:CodeletEltype, U, R}
+    if N == R
+        _odd_codelet!(out, in, R, start_out, stride_out, start_in, stride_in, d)
+        return
+    end
+    m = N ÷ R
+    toff_next = toff + (R - 1) * m
+    for r in 0:R-1
+        fft_powr!(out, in, m, start_out + r * m * stride_out, stride_out, start_in + r * stride_in, stride_in * R, d, tw, toff_next, Val(R))
+    end
+    # k = 0: all twiddles are 1
+    _odd_codelet!(out, out, R, start_out, m * stride_out, start_out, m * stride_out, d)
+    @inbounds for k in 1:m-1
+        base = start_out + k * stride_out
+        tb = toff + (R - 1) * k
+        for r in 1:R-1
+            out[base + r * m * stride_out] *= tw[tb + r]
+        end
+        _odd_codelet!(out, out, R, base, m * stride_out, base, m * stride_out, d)
+    end
+    return nothing
+end
 
 """
 $(TYPEDSIGNATURES)
