@@ -69,8 +69,12 @@ function _use_stockham(::Type{T}, N::Int, num_threads::Int) where {T}
     N >= 32 || return false
     _stockham_smooth(N) || return false
     if ispow2(N)
+        # ComplexF64 powers of two: the radix-4 kernel with the leaves-first
+        # order is faster. ComplexF32 below LEAFFIRST_MIN: this engine wins
+        # (twice the lanes); at or above it the threaded leaves-first path
+        # applies and results must not depend on `num_threads`.
         T === ComplexF32 || return false
-        num_threads > 1 && N >= LEAFFIRST_MIN && return false
+        N >= LEAFFIRST_MIN && return false
     end
     return true
 end
@@ -219,7 +223,8 @@ end
 end
 @inline _sstore!(a, i, v::Vec) = vstore(v, a, i)
 @inline _sstore!(a, i, v) = (@inbounds a[i] = v)
-@generated function _sodd_store!(yre, yim, ys::NTuple{L,V}, wr::NTuple{M,V}, wi::NTuple{M,V}, yb::Int, s::Int, q::Int) where {L,V,M}
+@generated function _sodd_store!(yre, yim, ys::NT, wr::NTW, wi::NTW, yb::Int, s::Int, q::Int) where {NT<:Tuple,NTW<:Tuple}
+    M = length(NTW.parameters)
     exs = [quote
                or, oi = _scmul(wr[$j], wi[$j], ys[$(2j + 1)], ys[$(2j + 2)])
                _sstore!(yre, yb + $j * s + q, or)
