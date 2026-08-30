@@ -7,12 +7,15 @@ using MuladdMacro: @muladd
 using Polyester: @batch
 using Primes: Primes
 using Reexport: @reexport
+using SIMD: Vec, vload, vstore, shufflevector
 
 @reexport using AbstractFFTs
 
 include("callgraph.jl")
 include("singleton_twiddle.jl")
 include("codelets.jl")
+include("simd_pass.jl")
+include("leaffirst.jl")
 include("algos.jl")
 include("plan.jl")
 
