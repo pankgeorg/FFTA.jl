@@ -118,7 +118,7 @@ function CallGraphNode!(
         throw(DimensionMismatch("Array length must be strictly positive"))
     end
     if iseven(N) && ispow2(N)
-        push!(workspace, T[])
+        push!(workspace, Vector{T}(undef, leaffirst_buflen(T, N)))
         push!(nodes, CallGraphNode(0, 0, POW2RADIX4_FFT, N, s_in, s_out))
         return 1
     elseif N % 3 == 0 && nextpow(3, N) == N
