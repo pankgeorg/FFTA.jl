@@ -125,8 +125,18 @@ mutable struct FFTAPlan_re{T,N,R<:RegionTypes{N},S<:Real} <: FFTAPlan{T,N}
     const flen::Int
     const workers::WorkerPool{T,N,S}
     pinv::AbstractFFTs.ScaledPlan
+    scratch::Any      # lazily cached complex copy for the backward N-d path (see mul!)
     FFTAPlan_re{T,N,R}(cg::NTuple{N,CallGraph{T}}, r::R, dir::Direction, flen::Int, workers::WorkerPool{T,N,S}) where {T,N,R<:RegionTypes{N},S} =
         new{T,N,R,S}(cg, r, dir, flen, workers)
+end
+
+# the complex passes of the backward real transform must not modify the
+# input; the copy is kept in the plan so repeated executions do not allocate
+function _re_scratch(p::FFTAPlan_re{T}, x::AbstractArray{T,N})::Array{T,N} where {T,N}
+    if !isdefined(p, :scratch) || !(p.scratch isa Array{T,N}) || size(p.scratch::Array{T,N}) != size(x)
+        p.scratch = Array{T,N}(undef, size(x))
+    end
+    return copyto!(p.scratch::Array{T,N}, x)
 end
 function FFTAPlan_re{T,N}(
     cg::NTuple{N,CallGraph{T}}, r::R,
@@ -804,7 +814,7 @@ function LinearAlgebra.mul!(y::AbstractArray{<:Real,N}, p::FFTAPlan_re{T,M}, x::
     d1 = p.region[1]
     _check_re_dims(y, p, x, d1, false)
     _check_re_other_dims(p, x, false)
-    tmp = copy(x)   # the complex passes must not modify the input
+    tmp = _re_scratch(p, x)
     for k in M:-1:2
         _cx_along_dim!(tmp, p.workers, k, FFT_BACKWARD, Int(p.region[k]))
     end
@@ -835,6 +845,40 @@ end
 # Inverse plans
 # `AbstractFFTs.inv(p)` calls `plan_inv(p)` once and caches it in `p.pinv`;
 # `p \\ x` and `ldiv!(y, p, x)` go through `inv(p)`.
+
+# adjoint plans (`p'`, `AbstractFFTs.adjoint_mul`): the generic machinery
+# only needs the plan's adjoint style and `size`/`fftdims`
+AbstractFFTs.AdjointStyle(::FFTAPlan_cx) = AbstractFFTs.FFTAdjointStyle()
+AbstractFFTs.AdjointStyle(p::FFTAPlan_re) =
+    p.dir === FFT_FORWARD ? AbstractFFTs.RFFTAdjointStyle() : AbstractFFTs.IRFFTAdjointStyle(p.flen)
+
+# AbstractFFTs' generic `adjoint_mul` for the rfft style requires
+# `Plan{T<:Real}`; FFTA's forward real plans are parameterized on the complex
+# output type, so the same computation is provided here (scale the halved
+# dimension's doubled bins, then unnormalized inverse).
+function AbstractFFTs.adjoint_mul(p::FFTAPlan_re{T}, x::AbstractArray, ::AbstractFFTs.RFFTAdjointStyle) where {T<:Complex}
+    dims = AbstractFFTs.fftdims(p)
+    N = AbstractFFTs.normalization(real(T), size(p), dims)
+    halfdim = first(dims)
+    d = size(p, halfdim)
+    n = AbstractFFTs.output_size(p, halfdim)
+    scale = reshape([(i == 1 || (i == n && 2 * (i - 1)) == d) ? N : 2 * N for i in 1:n],
+                    ntuple(i -> i == halfdim ? n : 1, Val(ndims(x))))
+    return p \ (x ./ convert(typeof(x), scale))
+end
+
+# same story for the irfft style: `n` must be the complex (halved) length and
+# `d` the real length, which FFTA's `size` does not distinguish
+function AbstractFFTs.adjoint_mul(p::FFTAPlan_re{T}, x::AbstractArray, ::AbstractFFTs.IRFFTAdjointStyle) where {T<:Complex}
+    dims = AbstractFFTs.fftdims(p)
+    N = AbstractFFTs.normalization(real(T), size(p), dims)
+    halfdim = first(dims)
+    d = p.flen
+    n = (d >> 1) + 1
+    scale = reshape([(i == 1 || (i == n && 2 * (i - 1)) == d) ? 1 : 2 for i in 1:n],
+                    ntuple(i -> i == halfdim ? n : 1, Val(ndims(x))))
+    return (convert(typeof(x), scale) ./ N) .* (p \ x)
+end
 
 function AbstractFFTs.plan_inv(p::FFTAPlan_cx{T,N,R}) where {T,N,R}
     dir = p.dir === FFT_FORWARD ? FFT_BACKWARD : FFT_FORWARD
@@ -871,6 +915,8 @@ mutable struct FFTAPlan_inplace{T,N,M,P<:FFTAPlan_cx{T,M}} <: FFTAPlan{T,M}
     pinv::AbstractFFTs.ScaledPlan
     FFTAPlan_inplace(p::P, buf::Array{T,N}) where {T,N,M,P<:FFTAPlan_cx{T,M}} = new{T,N,M,P}(p, buf)
 end
+AbstractFFTs.AdjointStyle(p::FFTAPlan_inplace) = AbstractFFTs.AdjointStyle(p.p)
+AbstractFFTs.fftdims(p::FFTAPlan_inplace) = AbstractFFTs.fftdims(p.p)
 Base.size(p::FFTAPlan_inplace) = size(p.p)
 Base.size(p::FFTAPlan_inplace, i::Int) = size(p.p, i)
 
