@@ -237,6 +237,9 @@ function fft_pow2_radix4!(
     fft_pow2_radix4!(out, in, m, start_out + 2*m*stride_out, stride_out, start_in + 2*stride_in, stride_in*4, d, tw, toff_next)
     fft_pow2_radix4!(out, in, m, start_out + 3*m*stride_out, stride_out, start_in + 3*stride_in, stride_in*4, d, tw, toff_next)
 
+    # vectorised butterfly pass for the floating-point types (see simd_pass.jl)
+    _pow2_pass_simd!(out, m, start_out, stride_out, d, tw, toff) && return
+
     @inbounds for k in 0:m-1
         wkoe = tw[toff + 3k + 1]
         wkeo = tw[toff + 3k + 2]
