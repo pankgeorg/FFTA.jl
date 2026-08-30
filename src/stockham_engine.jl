@@ -46,8 +46,19 @@ end
 _clone_chain(c::StockhamChain{S}) where {S} =
     StockhamChain{S}(c.n, c.stages, similar(c.are), similar(c.aim), similar(c.bre), similar(c.bim))
 
-_stockham_width(::Type{Float64}) = 2   # one 128-bit register
-_stockham_width(::Type{Float32}) = 4
+# host vector register width in bits (scalable extensions such as SVE are
+# not detectable here, so aarch64 assumes 128-bit NEON)
+function _host_vector_bits()
+    Sys.ARCH === :x86_64 || return 128
+    CPUID = Base.BinaryPlatforms.CPUID
+    CPUID.test_cpu_feature(CPUID.JL_X86_avx512f) && return 512
+    CPUID.test_cpu_feature(CPUID.JL_X86_avx) && return 256
+    return 128
+end
+const _STOCKHAM_VECTOR_BITS = _host_vector_bits()
+
+_stockham_width(::Type{Float64}) = _STOCKHAM_VECTOR_BITS ÷ 64
+_stockham_width(::Type{Float32}) = _STOCKHAM_VECTOR_BITS ÷ 32
 
 "is `n` a product of 2 and `STOCKHAM_RADICES`?"
 function _stockham_smooth(n::Int)
