@@ -22,6 +22,7 @@ struct Worker{T,N,S<:Real}
     rbuf::Vector{S}   # contiguous copy of a strided real pencil, see `_re_pencil_loop!` (real plans only)
     cbuf::Vector{T}   # contiguous copy of a strided complex pencil (real plans only)
     rtw::Vector{T}    # twiddles of the even-length real pre/post-processing, see `_re_twiddles` (shared)
+    gathers::Vector{Vector{T}}   # every worker's root-node workspace: gather buffers for the threaded leaves-first path
 end
 
 """
@@ -52,12 +53,13 @@ function _workers(cg::Tuple{CallGraph{T},Vararg{CallGraph{T}}}, ::Val{N}, num_th
     obuflen = maximum(g -> first(g.nodes).sz, cg)
     clen = rlen == 0 ? 0 : rlen ÷ 2 + 1
     rtw = _re_twiddles(T, rlen)
-    mk(graphs) = Worker{T,N,S}(graphs, Vector{T}(undef, obuflen), Vector{T}(undef, buflen), Vector{S}(undef, rlen), Vector{T}(undef, clen), rtw)
-    workers = [mk(cg)]
+    graphs = [cg]
     for _ in 2:num_threads
-        push!(workers, mk(map(_clone_workspace, cg)))
+        push!(graphs, map(_clone_workspace, cg))
     end
-    return workers
+    gathers = [first(g)[1].type === POW2RADIX4_FFT ? first(g).workspace[1] : T[] for g in graphs]
+    mk(graphs) = Worker{T,N,S}(graphs, Vector{T}(undef, obuflen), Vector{T}(undef, buflen), Vector{S}(undef, rlen), Vector{T}(undef, clen), rtw, gathers)
+    return [mk(g) for g in graphs]
 end
 
 # Transforms with fewer elements than this are not split over threads.
@@ -251,7 +253,18 @@ function LinearAlgebra.mul!(y::AbstractVector{U}, p::FFTAPlan_cx{T,1}, x::Abstra
     if size(p) != size(x)
         throw(DimensionMismatch("plan has axes $(size(p)), but input array has axes $(size(x))"))
     end
-    fft_kernel!(y, x, 1, 1, p.dir, p.callgraph[1][1].type, p.callgraph[1], 1)
+    _kernel_1d!(y, x, p.dir, p.callgraph[1], p.workers[1].gathers)
+    return y
+end
+
+# One whole transform: the threaded leaves-first path for large powers of two
+# when the plan has several workers, the kernel otherwise.
+function _kernel_1d!(y::AbstractVector, x::AbstractVector, d::Direction, g::CallGraph{T}, gathers::Vector{Vector{T}}) where {T}
+    if _threaded_1d_ok(g, gathers)
+        _pow2_leaffirst_threaded!(y, x, g[1].sz, 1, 1, 1, d, g.twiddles[1], 0, gathers)
+    else
+        fft_kernel!(y, x, 1, 1, d, g[1].type, g, 1)
+    end
     return y
 end
 
@@ -510,7 +523,7 @@ function _rfft_pencil!(y::AbstractVector{T}, x::AbstractVector{<:Real}, w::Worke
         # processing 35, no. 6 (2003): 849-863.
         m = n >> 1
         _pack_pairs!(buf, x, m)
-        fft_kernel!(view(y, 1:m), buf, 1, 1, FFT_FORWARD, cg[1].type, cg, 1)
+        _kernel_1d!(view(y, 1:m), buf, FFT_FORWARD, cg, w.gathers)
 
         # Construct the result by first constructing the elements of the
         # real and imaginary part, followed by the usual radix-2 assembly,
@@ -563,7 +576,7 @@ function _brfft_pencil!(x::AbstractVector{<:Real}, y::AbstractVector{T}, w::Work
             tmp[j]         =      XX + im * XY
             tmp[m - j + 2] = conj(XX - im * XY)
         end
-        fft_kernel!(out, tmp, 1, 1, FFT_BACKWARD, cg[1].type, cg, 1)
+        _kernel_1d!(out, tmp, FFT_BACKWARD, cg, w.gathers)
         _unpack_pairs!(x, out, m)
     else
         # Odd length: rebuild the conjugate-symmetric spectrum and transform.

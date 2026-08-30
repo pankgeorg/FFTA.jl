@@ -267,14 +267,19 @@ One radix-4 butterfly pass combining the four quarter transforms of size `m`
 stored at `out[start_out + k*stride_out]`, `k = 0..4m-1`, with the twiddles of
 this level at `tw[toff+1:toff+3m]`.
 """
+_pow2_pass!(out::AbstractVector{T}, m::Int, start_out::Int, stride_out::Int, d::Direction,
+            tw::AbstractVector{T}, toff::Int) where {T} =
+    _pow2_pass!(out, m, start_out, stride_out, d, tw, toff, 0, m)
+
+# the butterflies `k = k0..k1-1` of the pass (a chunk, for threading)
 function _pow2_pass!(out::AbstractVector{T}, m::Int, start_out::Int, stride_out::Int, d::Direction,
-                     tw::AbstractVector{T}, toff::Int) where {T}
+                     tw::AbstractVector{T}, toff::Int, k0::Int, k1::Int) where {T}
     dir = direction_sign(d)
     minusi = -dir * im
     # vectorised butterfly pass for the floating-point types (see simd_pass.jl)
-    _pow2_pass_simd!(out, m, start_out, stride_out, d, tw, toff) && return
+    _pow2_pass_simd!(out, m, start_out, stride_out, d, tw, toff, k0, k1) && return
 
-    @inbounds for k in 0:m-1
+    @inbounds for k in k0:k1-1
         wkoe = tw[toff + 3k + 1]
         wkeo = tw[toff + 3k + 2]
         wkoo = tw[toff + 3k + 3]

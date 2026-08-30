@@ -96,3 +96,115 @@ function _pow2_level!(out::AbstractVector{T}, N::Int, L::Int, start_out::Int, d:
         _pow2_level!(out, m, L, start_out + q * m, d, tw, toff + 3m)
     end
 end
+
+
+# ---------------------------------------------------------------------------
+# Threaded leaves-first order for a single large transform
+#
+# The two stages above are embarrassingly parallel: the sub-transforms are
+# independent (each chunk of groups uses its own gather buffer, one per
+# worker), and a butterfly pass is independent across blocks and, within a
+# block, across butterflies. Passes over few large blocks are split by
+# butterfly range in multiples of 64 (SIMD-friendly), so the operations and
+# their order per element are the same as in the serial code: results do not
+# depend on the number of threads.
+# ---------------------------------------------------------------------------
+
+"""
+$(TYPEDSIGNATURES)
+`_pow2_leaffirst!` on `nt = length(gathers)` threads (Polyester), `gathers`
+being one gather buffer per worker (see `Worker.gathers`).
+"""
+function _pow2_leaffirst_threaded!(
+    out::AbstractVector{T}, in::AbstractVector{U},
+    N::Int, start_out::Int, start_in::Int, stride_in::Int,
+    d::Direction, tw::AbstractVector{T}, toff::Int, gathers::Vector{Vector{T}}
+) where {T<:Complex, U}
+    nt = length(gathers)
+    G = _leaffirst_group(T)
+    B = N
+    toffB = toff
+    while B > LEAFFIRST_BLOCK
+        toffB += 3 * (B ÷ 4)
+        B ÷= 4
+    end
+    P = N ÷ B
+    _lf_subtransforms!(out, in, B, P, G, start_out, start_in, stride_in, d, tw, toffB, gathers)
+    M = 4B
+    while M <= N
+        toffM = toff
+        L = N
+        while L > M
+            toffM += 3 * (L ÷ 4)
+            L ÷= 4
+        end
+        _lf_level!(out, N, M, start_out, d, tw, toffM, nt)
+        M *= 4
+    end
+    return nothing
+end
+
+# (chunks are large here — a whole transform of ≥ 2^18 elements split nt
+# ways — so plain tasks are used; Polyester's `@batch` cannot pass a vector
+# of buffers to its threads on every platform)
+
+# stage 1: the P sub-transforms of size B in groups of G, one chunk of groups per thread
+function _lf_subtransforms!(out::AbstractVector{T}, in::AbstractVector, B::Int, P::Int, G::Int,
+                            start_out::Int, start_in::Int, stride_in::Int, d::Direction,
+                            tw::AbstractVector{T}, toffB::Int, gathers::Vector{Vector{T}}) where {T}
+    nt = length(gathers)
+    digits = trailing_zeros(P) ÷ 2
+    ngroups = P ÷ G
+    Base.@sync for c in 1:nt
+        buf = gathers[c]
+        g0 = (c - 1) * ngroups ÷ nt
+        g1 = c * ngroups ÷ nt - 1
+        Threads.@spawn for g in g0:g1
+            q0 = g * G
+            @inbounds for j in 0:B-1
+                src = start_in + (q0 + j * P) * stride_in
+                for r in 0:G-1
+                    buf[r * B + j + 1] = in[src + r * stride_in]
+                end
+            end
+            for r in 0:G-1
+                fft_pow2_radix4!(out, buf, B, start_out + B * _rev4(q0 + r, digits), 1, 1 + r * B, 1, d, tw, toffB)
+            end
+        end
+    end
+    return nothing
+end
+
+# stage 2: all passes of the level whose blocks have size M
+function _lf_level!(out::AbstractVector{T}, N::Int, M::Int, start_out::Int, d::Direction,
+                    tw::AbstractVector{T}, toffM::Int, nt::Int) where {T}
+    m = M ÷ 4
+    nblocks = N ÷ M
+    if nblocks >= nt
+        # whole blocks per thread
+        Base.@sync for c in 1:nt
+            b0 = (c - 1) * nblocks ÷ nt
+            b1 = c * nblocks ÷ nt - 1
+            Threads.@spawn for b in b0:b1
+                _pow2_pass!(out, m, start_out + b * M, 1, d, tw, toffM)
+            end
+        end
+    else
+        # few blocks: split the butterflies of every block, in multiples of 64
+        Base.@sync for c in 1:nt
+            k0 = ((c - 1) * m ÷ nt) ÷ 64 * 64
+            k1 = c == nt ? m : (c * m ÷ nt) ÷ 64 * 64
+            k1 > k0 || continue
+            Threads.@spawn for b in 0:nblocks-1
+                _pow2_pass!(out, m, start_out + b * M, 1, d, tw, toffM, k0, k1)
+            end
+        end
+    end
+    return nothing
+end
+
+# Whether the root transform of `g` (size `N`) can take the threaded
+# leaves-first path with the given gather buffers.
+_threaded_1d_ok(g::CallGraph, gathers::Vector) =
+    length(gathers) > 1 && g[1].type === POW2RADIX4_FFT && g[1].sz >= LEAFFIRST_MIN &&
+    !isempty(gathers[1]) && g[1].sz ÷ LEAFFIRST_BLOCK >= 4 * length(gathers) ÷ 4 + 1

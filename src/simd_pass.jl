@@ -55,10 +55,10 @@ loop.
 """
 @inline function _pow2_pass_simd!(
     out::AbstractVector{T}, m::Int, start_out::Int, stride_out::Int, d::Direction,
-    tw::AbstractVector{T}, toff::Int
+    tw::AbstractVector{T}, toff::Int, k0::Int = 0, k1::Int = m
 ) where {T<:CodeletEltype}
     W = _simd_width(T)
-    (stride_out == 1 && m >= W && _simd_contiguous(out) && tw isa Vector{T}) || return false
+    (stride_out == 1 && m >= W && k0 % W == 0 && (k1 - k0) % W == 0 && _simd_contiguous(out) && tw isa Vector{T}) || return false
     R = real(T)
     L = 2W
     V = Vec{L,R}
@@ -71,7 +71,7 @@ loop.
     po = Ptr{R}(pointer(out)) + (start_out - 1) * 2sz
     pt = Ptr{R}(pointer(tw)) + toff * 2sz
     GC.@preserve out tw begin
-        @inbounds for k in 0:W:m-1
+        @inbounds for k in k0:W:k1-1
             p0 = po + k * 2sz
             p1 = p0 + m * 2sz
             p2 = p0 + 2m * 2sz
@@ -89,4 +89,4 @@ loop.
     end
     return true
 end
-_pow2_pass_simd!(out, m, start_out, stride_out, d, tw, toff) = false
+_pow2_pass_simd!(out, m, start_out, stride_out, d, tw, toff, k0 = 0, k1 = m) = false

@@ -33,4 +33,13 @@ end
     @test yr ≈ fft(complex(xr))[1:n÷2+1] rtol = rtol
     @test brfft(yr, n) ≈ n .* xr rtol = rtol
     @test (@allocated mul!(yr, pr, xr)) == 0
+    # threaded leaves-first path (several workers): same operations, identical output
+    if Threads.nthreads() > 1
+        pt = plan_fft(x; num_threads = Threads.nthreads())
+        @test pt * x == y
+        @test (@allocated mul!(y, pt, x)) <= 64 * 1024   # task objects only
+        prt = plan_rfft(xr; num_threads = Threads.nthreads())
+        @test prt * xr == yr
+        @test brfft(prt * xr, n) ≈ n .* xr rtol = rtol
+    end
 end
