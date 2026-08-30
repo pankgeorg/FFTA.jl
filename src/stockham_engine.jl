@@ -107,8 +107,29 @@ function _stockham_stage(::Type{S}, R::Int, n::Int, D::Int, s::Int) where {S<:Re
     return StockhamStage{S}(R, false, twr, twi)
 end
 
+# Stage chains (twiddle tables included) are immutable and shared across all
+# plans of one (element type, length, direction) for the session, FFTW-style:
+# repeated planning — DSP-style code plans on every call — costs an allocation
+# of the scratch planes and a dictionary hit instead of a sincospi sweep.
+const _STOCKHAM_STAGE_LOCK = ReentrantLock()
+const _STOCKHAM_STAGE_CACHE = Dict{Tuple{DataType,Int,Int},Any}()
+
+function _stockham_stages_cached(::Type{S}, n::Int, D::Int) where {S<:Real}
+    key = (S, n, D)
+    r = lock(_STOCKHAM_STAGE_LOCK) do
+        get!(() -> _stockham_build_stages(S, n, D), _STOCKHAM_STAGE_CACHE, key)
+    end
+    return r::Vector{StockhamStage{S}}
+end
+
 function StockhamChain{S}(n::Int, dir::Direction) where {S<:Real}
-    D = direction_sign(dir)
+    stages = _stockham_stages_cached(S, n, direction_sign(dir))
+    return StockhamChain{S}(n, stages,
+                            Vector{S}(undef, n), Vector{S}(undef, n),
+                            Vector{S}(undef, n), Vector{S}(undef, n))
+end
+
+function _stockham_build_stages(::Type{S}, n::Int, D::Int) where {S<:Real}
     a = trailing_zeros(n)
     r = n >> a
     ps = Pair{Int,Int}[]
@@ -137,9 +158,7 @@ function StockhamChain{S}(n::Int, dir::Direction) where {S<:Real}
         ncur ÷= p
     end
     f > 1 && push!(stages, _stockham_stage(S, f, ncur, D, s))
-    return StockhamChain{S}(n, stages,
-                            Vector{S}(undef, n), Vector{S}(undef, n),
-                            Vector{S}(undef, n), Vector{S}(undef, n))
+    return stages
 end
 
 # ---------------------------------------------------------------------------

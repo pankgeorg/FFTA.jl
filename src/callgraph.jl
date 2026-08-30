@@ -404,37 +404,49 @@ Precompute the chirp, its transform, the work arrays and the call graph of the
 padded transform used by `fft_bluestein!` for a length-`N` transform in
 direction `d`.
 """
+# The chirp and its padded transform are the same for every plan of one
+# (element type, length, direction); computing them is the dominant cost of
+# planning a prime size (a sincospi sweep plus a full padded transform), so
+# they are cached for the session. Work arrays and the padded transform's
+# graph (it carries per-plan workspace) stay per scratch.
+const _BLUESTEIN_LOCK = ReentrantLock()
+const _BLUESTEIN_CACHE = Dict{Tuple{DataType,Int,Int},Any}()
+
+function _bluestein_parts(::Type{T}, N::Int, d::Direction) where {T<:Complex}
+    key = (T, N, Int(direction_sign(d)))
+    r = lock(_BLUESTEIN_LOCK) do
+        get!(_BLUESTEIN_CACHE, key) do
+            pad_len = bluestein_pad_length(T, N)
+            R = real(T)
+            chirp = Vector{T}(undef, N)
+            sgn = -direction_sign(d)
+            p = 0   # n^2 mod 2N, kept in (-N, N]
+            for i in 1:N
+                chirp[i] = T(cispi(R(sgn * p) / R(N)))
+                p += (2i - 1)   # prevents overflow unless N is absolutely massive
+                p > N && (p -= 2N)
+            end
+            graph = CallGraph{T}(pad_len, 2, FFT_FORWARD)
+            a = zeros(T, pad_len)
+            copyto!(a, 1, chirp, 1, N)
+            for j in 0:N-2
+                a[pad_len - j] = chirp[2 + j]
+            end
+            chirp_fft = Vector{T}(undef, pad_len)
+            fft_kernel!(chirp_fft, a, 1, 1, FFT_FORWARD, graph[1].type, graph, 1)
+            chirp_fft ./= R(pad_len)
+            (pad_len, chirp, chirp_fft)
+        end
+    end
+    return r::Tuple{Int,Vector{T},Vector{T}}
+end
+
 function BluesteinScratch{T}(N::Int, d::Direction) where {T<:Complex}
-    pad_len = bluestein_pad_length(T, N)
-    R = real(T)
-
-    # chirp b_n = exp(sgn · iπ n²/N); n² is tracked modulo 2N so that the
-    # argument of `cispi` stays small.
-    chirp = Vector{T}(undef, N)
-    sgn = -direction_sign(d)
-    p = 0   # n^2 mod 2N, kept in (-N, N]
-    for i in 1:N
-        chirp[i] = T(cispi(R(sgn * p) / R(N)))
-        p += (2i - 1)   # prevents overflow unless N is absolutely massive
-        p > N && (p -= 2N)
-    end
-
-    # the padded length is 3-smooth, so its graph has no Bluestein node
+    pad_len, chirp, chirp_fft = _bluestein_parts(T, N, d)
+    # the padded length is smooth, so its graph has no Bluestein node
     graph = CallGraph{T}(pad_len, 2, FFT_FORWARD)
-
-    # periodised, zero-padded chirp and its forward transform, scaled by
-    # 1/pad_len so that the inverse transform in `fft_bluestein!` needs no
-    # further normalisation
-    a = zeros(T, pad_len)
-    copyto!(a, 1, chirp, 1, N)
-    for j in 0:N-2
-        a[pad_len - j] = chirp[2 + j]
-    end
-    chirp_fft = Vector{T}(undef, pad_len)
-    fft_kernel!(chirp_fft, a, 1, 1, FFT_FORWARD, graph[1].type, graph, 1)
-    chirp_fft ./= R(pad_len)
-
-    return BluesteinScratch{T,CallGraph{T}}(N, pad_len, chirp, chirp_fft, a, Vector{T}(undef, pad_len), graph)
+    return BluesteinScratch{T,CallGraph{T}}(N, pad_len, chirp, chirp_fft,
+                                            Vector{T}(undef, pad_len), Vector{T}(undef, pad_len), graph)
 end
 
 """
