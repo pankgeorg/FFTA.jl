@@ -10,8 +10,9 @@ of each column over a reference column.
     julia --project=. compare3.jl [--impl NAME=SPEC ...] [--ref NAME]
                                   [--threads 1,4,16] [--out DIR] [--table FILE.md]
                                   [--only 1d,nd,batched,threads] [--kinds fft,rfft]
+                                  [--classes pow2,smooth,prime,awkward]
                                   [--maxlog2 K] [--seconds S] [--sizes a,b,c]
-                                  [--no-measure] [--quick] [--render-only]
+                                  [--no-measure] [--quick] [--render-only] [--skip-existing]
 
 `SPEC` is `fftw` (FFTW.jl from the registry), `@VERSION` (FFTA from the
 registry, e.g. `@0.3.1`), or a path to an FFTA checkout / worktree. The
@@ -27,7 +28,8 @@ run is therefore
                                   --impl new=/path/to/experiment --ref int
 
 Environments are created under `envs/NAME/` (git-ignored) and re-used; delete
-one to rebuild it. Per-run JSON files land in `--out` (default
+one to rebuild it. `--skip-existing` keeps a column whose complete JSON file
+is already in `--out` (e.g. to add one column to a finished run). Per-run JSON files land in `--out` (default
 `compare3_results/`) as `NAME_tN.json`; `--render-only` re-renders the table
 from them without benchmarking.
 =#
@@ -59,7 +61,7 @@ const REF     = let r = getopt("--ref", "")
 end
 const ENVDIR  = joinpath(@__DIR__, "envs")
 const PASS    = String[]      # case options passed through to the workers
-for flag in ("--only", "--kinds", "--sizes")
+for flag in ("--only", "--kinds", "--sizes", "--classes")
     v = getopt(flag, ""); isempty(v) || append!(PASS, [flag, v])
 end
 append!(PASS, ["--maxlog2", getopt("--maxlog2", QUICK ? "14" : "22")])
@@ -88,8 +90,12 @@ function ensure_env(impl)
 end
 
 function run_worker(impl, nthreads)
-    dir = ensure_env(impl)
     out = joinpath(OUTDIR, "$(impl.name)_t$(nthreads).json")
+    if "--skip-existing" in ARGS && isfile(out) && get(JSON.parsefile(out), "complete", false)
+        @info "keeping existing results" impl.name nthreads out
+        return out
+    end
+    dir = ensure_env(impl)
     kind = impl.spec == "fftw" ? "fftw" : "ffta"
     cmd = `$(Base.julia_cmd()) -t $nthreads --project=$dir $(joinpath(@__DIR__, "compare3_worker.jl")) --impl $kind --out $out $PASS`
     @info "running" impl.name nthreads

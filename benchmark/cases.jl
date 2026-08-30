@@ -56,22 +56,24 @@ end
 """
     case_list(; only, kinds, maxlog2, sizes, nthreads, measure) -> Vector{NamedTuple}
 
-The sweep of `suite.jl`: 1D classes × {Float64, Float32} × {fft, rfft}, a
+The sweep of `suite.jl`: 1D classes (restricted with `classes`) × {Float64, Float32} × {fft, rfft}, a
 FFTW-`MEASURE` column for 1D pow2 ComplexF64, 2D/3D, batched `dims`, and the
 threaded subset. `nthreads > 1` selects the threaded subset only when `only`
 contains `"threads"`; the other sections are always emitted with `nthreads`.
 """
 function case_list(; only = ("1d", "nd", "batched", "threads"), kinds = (:fft, :rfft),
-                     maxlog2 = 22, sizes = Int[], nthreads = 1, measure = true)
-    classes = size_classes(maxlog2)
+                     maxlog2 = 22, sizes = Int[], nthreads = 1, measure = true,
+                     classes = ("pow2", "smooth", "prime", "awkward"))
+    sizes_by_class = size_classes(maxlog2)
     nmax = 1 << maxlog2
     cases = NamedTuple[]
     add!(kind, T, sz, dims, shape; measure = false, thr = nthreads) =
         kind in kinds && push!(cases, (kind = kind, T = T, sz = sz, dims = dims, shape = shape,
                                         nthreads = thr, measure = measure,
-                                        class = length(sz) == 1 ? class_of(classes, sz[1]) : "nd"))
+                                        class = length(sz) == 1 ? class_of(sizes_by_class, sz[1]) : "nd"))
     if "1d" in only
-        for cls in (:pow2, :smooth, :prime, :awkward), n in classes[cls]
+        for cls in (:pow2, :smooth, :prime, :awkward), n in sizes_by_class[cls]
+            String(cls) in classes || continue
             isempty(sizes) || n in sizes || continue
             for T in (Float64, Float32)
                 add!(:fft,  T, (n,), 1, "1d")
@@ -79,7 +81,7 @@ function case_list(; only = ("1d", "nd", "batched", "threads"), kinds = (:fft, :
             end
         end
         if measure
-            for n in classes.pow2
+            for n in sizes_by_class.pow2
                 isempty(sizes) || n in sizes || continue
                 add!(:fft, Float64, (n,), 1, "1d"; measure = true)
             end
@@ -115,7 +117,7 @@ function case_list(; only = ("1d", "nd", "batched", "threads"), kinds = (:fft, :
         end
     end
     if "threads" in only && nthreads > 1
-        for n in filter(n -> n >= 1 << 16, classes.pow2)
+        for n in filter(n -> n >= 1 << 16, sizes_by_class.pow2)
             add!(:fft, Float64, (n,), 1, "1d")
         end
         for n in filter(n -> n * n <= nmax && n >= 256, [256, 512, 1024, 2048])

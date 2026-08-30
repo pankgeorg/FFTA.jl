@@ -5,8 +5,8 @@
 #
 #     julia -t N --project=ENV compare3_worker.jl --impl fftw|ffta --out FILE.json [case options]
 #
-# Case options are those of `compare3.jl` (--only, --kinds, --maxlog2, --sizes,
-# --seconds, --no-measure). Julia's thread count (-t) is the plan thread count.
+# Case options are those of `compare3.jl` (--only, --kinds, --classes, --maxlog2,
+# --sizes, --seconds, --no-measure). Julia's thread count (-t) is the plan thread count.
 using Statistics, LinearAlgebra, Random, Dates
 using JSON
 include(joinpath(@__DIR__, "cases.jl"))
@@ -23,6 +23,7 @@ const SIZES    = let v = getopt("--sizes", ""); isempty(v) ? Int[] : parse.(Int,
 const MAXLOG2  = parse(Int, getopt("--maxlog2", "22"))
 const SECONDS  = parse(Float64, getopt("--seconds", "0.5"))
 const MEASURE  = !("--no-measure" in ARGS)
+const CLASSES  = split(getopt("--classes", "pow2,smooth,prime,awkward"), ",")
 const NTHREADS = Threads.nthreads()
 
 if IMPL == "fftw"
@@ -88,7 +89,7 @@ function flush_results(complete)
 end
 
 cases = case_list(; only = ONLY, kinds = KINDS, maxlog2 = MAXLOG2, sizes = SIZES,
-                    nthreads = NTHREADS, measure = MEASURE && IMPL == "fftw")
+                    nthreads = NTHREADS, measure = MEASURE && IMPL == "fftw", classes = CLASSES)
 println("== compare3 worker: $VERSION_STR, $(length(cases)) cases, $NTHREADS threads")
 for c in cases
     entry = Dict{String,Any}("key" => casekey(c), "kind" => String(c.kind), "T" => string(c.T),
