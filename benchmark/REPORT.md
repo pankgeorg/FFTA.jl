@@ -41,10 +41,16 @@ AVX2 + FMA, no AVX-512, Julia 1.12.6, FFTW 3.3.11 provider `fftw`,
 its [`PROVENANCE.md`](x86-64/PROVENANCE.md) and the per-branch
 before/after results under `x86-64/branches/`. Headline: FFTA's gap to
 FFTW is 1.22× wider (geometric mean over the size classes) on AVX2 than
-on NEON, worst in single precision and on smooth sizes — the SIMD effect
-the analysis predicts — and the Bluestein calibration files
+on NEON, concentrated on the non-radix-4 kernels (5/7-smooth composites)
+rather than spread uniformly; with all optimisation PRs merged the x86-64
+run gives a 3.24× geometric-mean speedup over 510 matched cases (one cell
+at 0.91×, inside that machine's noise band). The calibration files
 (`x86-64/calib_*.md`) show that the DFT/Bluestein crossover and the cost
-of 3-smooth padding lengths are architecture dependent.
+of 3-smooth padding lengths are architecture dependent, and
+`x86-64/codelet_*_x86.md` that 128/256-point straight-line codelets spill
+registers on AVX2. The x86-64 report was regenerated from a band-merged
+result file (24 prime sizes) and keeps the original run date in its
+header.
 
 ## Methodology
 
