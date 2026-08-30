@@ -14,6 +14,8 @@
 
 const CODELET_MAX = 64
 const CodeletEltype = Union{ComplexF32,ComplexF64}
+_simd_width(::Type{ComplexF64}) = 2   # complex values per SIMD vector
+_simd_width(::Type{ComplexF32}) = 4
 
 # Emit the statements computing the length-`length(xs)` DFT of the symbols
 # `xs` (radix-2 DIT), returning the symbols holding the outputs.
