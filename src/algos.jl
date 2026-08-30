@@ -247,6 +247,12 @@ function fft_pow2_radix4!(
     m = N ÷ 4
     toff_next = toff + 3m   # the next level's table follows this level's
 
+    # four codelet-sized children: computed in lockstep on SIMD vectors
+    if _pow2_lockstep!(out, in, N, start_out, stride_out, start_in, stride_in, d)
+        _pow2_pass!(out, m, start_out, stride_out, d, tw, toff)
+        return
+    end
+
     fft_pow2_radix4!(out, in, m, start_out                 , stride_out, start_in              , stride_in*4, d, tw, toff_next)
     fft_pow2_radix4!(out, in, m, start_out +   m*stride_out, stride_out, start_in +   stride_in, stride_in*4, d, tw, toff_next)
     fft_pow2_radix4!(out, in, m, start_out + 2*m*stride_out, stride_out, start_in + 2*stride_in, stride_in*4, d, tw, toff_next)
