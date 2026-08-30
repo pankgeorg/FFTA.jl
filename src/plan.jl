@@ -45,6 +45,45 @@ _clone_workspace(g::CallGraph{T}) where {T} =
 _clone_workspace(s::BluesteinScratch{T,G}) where {T,G} =
     BluesteinScratch{T,G}(s.N, s.pad_len, s.chirp, s.chirp_fft, Vector{T}(undef, s.pad_len), Vector{T}(undef, s.pad_len), _clone_workspace(s.graph))
 
+"""
+$(TYPEDEF)
+The workers of a plan. Only the first is built with the plan; the others are
+cloned from it, under `lock`, the first time an execution is actually split
+over threads (`_ensure_workers!`), so that one-shot calls such as `fft(x)`
+— which plan with `num_threads = Threads.nthreads()` — do not pay for
+buffers they never use. `length` is the number of workers the plan may use;
+`workers` holds the ones that exist.
+"""
+mutable struct WorkerPool{T,N,S}
+    const workers::Vector{Worker{T,N,S}}
+    const num_threads::Int
+    const lock::ReentrantLock
+end
+Base.length(wp::WorkerPool) = wp.num_threads
+Base.getindex(wp::WorkerPool, i::Int) = (i > 1 && _ensure_workers!(wp); wp.workers[i])
+
+# a worker with the same call-graph nodes and tables, its own workspace and
+# buffers, sharing the twiddles of the real transforms and the gather list
+function _clone_worker(w::Worker{T,N,S}) where {T,N,S}
+    graphs = map(_clone_workspace, w.callgraph)
+    push!(w.gathers, first(graphs)[1].type === POW2RADIX4_FFT ? first(graphs).workspace[1] : T[])
+    return Worker{T,N,S}(graphs, similar(w.obuf), similar(w.buf), similar(w.rbuf), similar(w.cbuf), w.rtw, w.gathers)
+end
+
+"""
+$(TYPEDSIGNATURES)
+Create the missing workers of the pool (thread-safe) and return them all.
+"""
+function _ensure_workers!(wp::WorkerPool)
+    length(wp.workers) >= wp.num_threads && return wp.workers
+    lock(wp.lock) do
+        while length(wp.workers) < wp.num_threads
+            push!(wp.workers, _clone_worker(wp.workers[1]))
+        end
+    end
+    return wp.workers
+end
+
 # `buflen` is the packing scratch length and `rlen` the real length of a real
 # plan (0 for complex plans, which need neither).
 function _workers(cg::Tuple{CallGraph{T},Vararg{CallGraph{T}}}, ::Val{N}, num_threads::Int, buflen::Int, rlen::Int = 0) where {T,N}
@@ -53,13 +92,9 @@ function _workers(cg::Tuple{CallGraph{T},Vararg{CallGraph{T}}}, ::Val{N}, num_th
     obuflen = maximum(g -> first(g.nodes).sz, cg)
     clen = rlen == 0 ? 0 : rlen ÷ 2 + 1
     rtw = _re_twiddles(T, rlen)
-    graphs = [cg]
-    for _ in 2:num_threads
-        push!(graphs, map(_clone_workspace, cg))
-    end
-    gathers = [first(g)[1].type === POW2RADIX4_FFT ? first(g).workspace[1] : T[] for g in graphs]
-    mk(graphs) = Worker{T,N,S}(graphs, Vector{T}(undef, obuflen), Vector{T}(undef, buflen), Vector{S}(undef, rlen), Vector{T}(undef, clen), rtw, gathers)
-    return [mk(g) for g in graphs]
+    gathers = [first(cg)[1].type === POW2RADIX4_FFT ? first(cg).workspace[1] : T[]]
+    w1 = Worker{T,N,S}(cg, Vector{T}(undef, obuflen), Vector{T}(undef, buflen), Vector{S}(undef, rlen), Vector{T}(undef, clen), rtw, gathers)
+    return WorkerPool{T,N,S}([w1], num_threads, ReentrantLock())
 end
 
 # Transforms with fewer elements than this are not split over threads.
@@ -69,9 +104,9 @@ mutable struct FFTAPlan_cx{T,N,R<:RegionTypes{N},S<:Real} <: FFTAPlan{T,N}
     const callgraph::NTuple{N,CallGraph{T}}
     const region::R
     const dir::Direction
-    const workers::Vector{Worker{T,N,S}}
+    const workers::WorkerPool{T,N,S}
     pinv::AbstractFFTs.ScaledPlan
-    FFTAPlan_cx{T,N,R}(cg::NTuple{N,CallGraph{T}}, r::R, dir::Direction, workers::Vector{Worker{T,N,S}}) where {T,N,R<:RegionTypes{N},S} =
+    FFTAPlan_cx{T,N,R}(cg::NTuple{N,CallGraph{T}}, r::R, dir::Direction, workers::WorkerPool{T,N,S}) where {T,N,R<:RegionTypes{N},S} =
         new{T,N,R,S}(cg, r, dir, workers)
 end
 function FFTAPlan_cx{T,N}(
@@ -86,9 +121,9 @@ mutable struct FFTAPlan_re{T,N,R<:RegionTypes{N},S<:Real} <: FFTAPlan{T,N}
     const region::R
     const dir::Direction
     const flen::Int
-    const workers::Vector{Worker{T,N,S}}
+    const workers::WorkerPool{T,N,S}
     pinv::AbstractFFTs.ScaledPlan
-    FFTAPlan_re{T,N,R}(cg::NTuple{N,CallGraph{T}}, r::R, dir::Direction, flen::Int, workers::Vector{Worker{T,N,S}}) where {T,N,R<:RegionTypes{N},S} =
+    FFTAPlan_re{T,N,R}(cg::NTuple{N,CallGraph{T}}, r::R, dir::Direction, flen::Int, workers::WorkerPool{T,N,S}) where {T,N,R<:RegionTypes{N},S} =
         new{T,N,R,S}(cg, r, dir, flen, workers)
 end
 function FFTAPlan_re{T,N}(
@@ -253,12 +288,20 @@ function LinearAlgebra.mul!(y::AbstractVector{U}, p::FFTAPlan_cx{T,1}, x::Abstra
     if size(p) != size(x)
         throw(DimensionMismatch("plan has axes $(size(p)), but input array has axes $(size(x))"))
     end
-    _kernel_1d!(y, x, p.dir, p.callgraph[1], p.workers[1].gathers)
+    _kernel_1d!(y, x, p.dir, p.callgraph[1], p.workers)
     return y
 end
 
 # One whole transform: the threaded leaves-first path for large powers of two
-# when the plan has several workers, the kernel otherwise.
+# when the plan has several workers, the kernel otherwise. Called with the
+# pool (complex plans) or with a worker's shared gather list (real pencils,
+# whose pool was completed by `_prepare_1d!`).
+function _kernel_1d!(y::AbstractVector, x::AbstractVector, d::Direction, g::CallGraph{T}, pool::WorkerPool{T}) where {T}
+    _prepare_1d!(g, pool)
+    _kernel_1d!(y, x, d, g, pool.workers[1].gathers)
+end
+_prepare_1d!(g::CallGraph, pool::WorkerPool) =
+    (length(pool) > 1 && g[1].type === POW2RADIX4_FFT && g[1].sz >= LEAFFIRST_MIN) && _ensure_workers!(pool)
 function _kernel_1d!(y::AbstractVector, x::AbstractVector, d::Direction, g::CallGraph{T}, gathers::Vector{Vector{T}}) where {T}
     if _threaded_1d_ok(g, gathers)
         _pow2_leaffirst_threaded!(y, x, g[1].sz, 1, 1, 1, d, g.twiddles[1], 0, gathers)
@@ -302,13 +345,14 @@ split into one contiguous chunk per worker and the chunks run as parallel
 tasks, each using its own worker (so its own call-graph workspace and
 buffers). Results do not depend on the number of threads.
 """
-function _foreach_pencil(f::F, A::AbstractArray{<:Any,N}, ::Val{dim}, workers::Vector{W}) where {F,N,dim,W}
+function _foreach_pencil(f::F, A::AbstractArray{<:Any,N}, ::Val{dim}, pool::WorkerPool) where {F,N,dim}
     Rpre  = CartesianIndices(ntuple(Base.Fix1(size, A), Val(dim - 1)))
     Rpost = CartesianIndices(ntuple(i -> size(A, dim + i), Val(N - dim)))
     npre = length(Rpre)
     total = npre * length(Rpost)
-    nt = min(length(workers), total ÷ 2)
+    nt = min(length(pool), total ÷ 2)
     if nt > 1 && total * size(A, dim) >= THREAD_THRESHOLD
+        workers = _ensure_workers!(pool)
         # one chunk per worker, run on Polyester's static thread pool (no task
         # allocation, the calling thread takes a chunk itself)
         @batch for c in 1:nt
@@ -321,7 +365,7 @@ function _foreach_pencil(f::F, A::AbstractArray{<:Any,N}, ::Val{dim}, workers::V
             end
         end
     else
-        w1 = workers[1]
+        w1 = pool.workers[1]
         for Ipost in Rpost, Ipre in Rpre
             f(w1, Ipre, Ipost)
         end
@@ -399,7 +443,7 @@ end
 
 @noinline function _execute_mdfft!(
     out::AbstractArray{U,N},
-    workers::Vector{<:Worker{T,M}},
+    workers::WorkerPool{T,M},
     dir::Direction,
     @nospecialize(region::RegionTypes),
 ) where {T,U,N,M}
@@ -430,7 +474,7 @@ write the worker's output buffer, which is then copied back.
 """
 function fft_along_dim!(
     A::AbstractArray{U,N},
-    workers::Vector{<:Worker{T,M}},
+    workers::WorkerPool{T,M},
     k::Int, d::Direction,
     ::Val{dim}
 ) where {T <: Complex{<:AbstractFloat}, U, N, M, dim}
@@ -639,7 +683,7 @@ function _re_along_dim!(kernel!::F, y::AbstractArray{<:Any,N}, x::AbstractArray{
     end
 end
 
-function _cx_along_dim!(A::AbstractArray{<:Any,N}, workers::Vector{<:Worker{T,M}}, k::Int, dir::Direction, d::Int) where {N,T,M}
+function _cx_along_dim!(A::AbstractArray{<:Any,N}, workers::WorkerPool{T,M}, k::Int, dir::Direction, d::Int) where {N,T,M}
     if @generated
         quote
             Base.Cartesian.@nif $N dim -> (d == dim) dim -> (fft_along_dim!(A, workers, k, dir, Val(dim)))
@@ -660,7 +704,8 @@ function LinearAlgebra.mul!(y::AbstractArray{T,N}, p::FFTAPlan_re{T,1}, x::Abstr
     d1 = only(p.region)
     _check_re_dims(y, p, x, d1, true)
     if N == 1
-        _rfft_pencil!(y, x, p.workers[1], p.flen)
+        _prepare_1d!(p.callgraph[1], p.workers)
+        _rfft_pencil!(y, x, p.workers.workers[1], p.flen)
     else
         _re_along_dim!(_rfft_pencil!, y, x, p, d1)
     end
@@ -676,7 +721,8 @@ function LinearAlgebra.mul!(y::AbstractArray{<:Real,N}, p::FFTAPlan_re{T,1}, x::
     d1 = only(p.region)
     _check_re_dims(y, p, x, d1, false)
     if N == 1
-        _brfft_pencil!(y, x, p.workers[1], p.flen)
+        _prepare_1d!(p.callgraph[1], p.workers)
+        _brfft_pencil!(y, x, p.workers.workers[1], p.flen)
     else
         _re_along_dim!(_brfft_pencil!, y, x, p, d1)
     end
