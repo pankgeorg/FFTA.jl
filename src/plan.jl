@@ -412,6 +412,21 @@ function _mul_loop!(
         end
         return nothing
     end
+    if R > 1 && x isa Array{T,N} && y isa Array{T,N} && y !== x &&
+       p.workers.workers[1].callgraph[1][1].type === STOCKHAM
+        S = real(T)
+        W = _stockham_width(S)
+        npre = 1
+        for i in 1:R-1
+            npre *= size(x, i)
+        end
+        B = npre % 16 == 0 && 16 % W == 0 ? 16 :
+            npre % 8 == 0 && 8 % W == 0 ? 8 : 0
+        if B > 0
+            _batch_along_dim!(vec(y), vec(x), npre, n, length(x) ÷ (npre * n), B, dir, p.workers)
+            return nothing
+        end
+    end
     _foreach_pencil(x, Val(R), p.workers) do w, Ipre, Ipost
         cg = w.callgraph[1]
         ibuf = w.ibuf; obuf = w.obuf
@@ -526,7 +541,7 @@ Transform every pencil of `A` along dimension `dim` in place, using the `k`-th
 call graph of the workers. The kernels read the (strided) pencil directly and
 write the worker's output buffer, which is then copied back.
 """
-function _batch_along_dim!(av::Vector{T}, npre::Int, n::Int, npost::Int, B::Int,
+function _batch_along_dim!(avout::Vector{T}, av::Vector{T}, npre::Int, n::Int, npost::Int, B::Int,
                            d::Direction, pool::WorkerPool) where {T<:Complex}
     S = real(T)
     D = direction_sign(d)
@@ -543,7 +558,7 @@ function _batch_along_dim!(av::Vector{T}, npre::Int, n::Int, npost::Int, B::Int,
             for k in lo:hi
                 kpost, kpre = divrem(k - 1, nbp)
                 base = kpre * B + 1 + kpost * npre * n
-                _stockham_pencil_batch!(av, base, npre, B, D, n, stages, xr, xi, yr, yi)
+                _stockham_pencil_batch!(avout, av, base, npre, B, D, n, stages, xr, xi, yr, yi)
             end
         end
     else
@@ -552,7 +567,7 @@ function _batch_along_dim!(av::Vector{T}, npre::Int, n::Int, npost::Int, B::Int,
         for k in 1:total
             kpost, kpre = divrem(k - 1, nbp)
             base = kpre * B + 1 + kpost * npre * n
-            _stockham_pencil_batch!(av, base, npre, B, D, n, stages, xr, xi, yr, yi)
+            _stockham_pencil_batch!(avout, av, base, npre, B, D, n, stages, xr, xi, yr, yi)
         end
     end
     return nothing
@@ -595,7 +610,8 @@ function fft_along_dim!(
         B = npre % 16 == 0 && 16 % W == 0 ? 16 :
             npre % 8 == 0 && 8 % W == 0 ? 8 : 0
         if B > 0
-            _batch_along_dim!(vec(A), npre, n, length(A) ÷ (npre * n), B, d, workers)
+            av = vec(A)
+            _batch_along_dim!(av, av, npre, n, length(A) ÷ (npre * n), B, d, workers)
             return nothing
         end
     end

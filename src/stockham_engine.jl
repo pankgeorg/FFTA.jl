@@ -910,15 +910,16 @@ function _stockham_batch_stages(::Type{S}, n::Int, D::Int, B::Int) where {S<:Rea
     return r::Vector{StockhamStage{S}}
 end
 
-"transform `B` pencils `av[base + (b-1) + (j-1)*st]`, `b in 1:B`, in place"
-function _stockham_pencil_batch!(av::AbstractVector{Complex{S}}, base::Int, st::Int, B::Int,
+"transform `B` pencils `avin[base + (b-1) + (j-1)*st]`, `b in 1:B`, into the same slots of `avout`"
+function _stockham_pencil_batch!(avout::AbstractVector{Complex{S}}, avin::AbstractVector{Complex{S}},
+                                 base::Int, st::Int, B::Int,
                                  D::Int, n::Int, stages::Vector{StockhamStage{S}},
                                  xr::Vector{S}, xi::Vector{S}, yr::Vector{S}, yi::Vector{S}) where {S}
     @inbounds for j in 1:n
         o = base + (j - 1) * st - 1
         jb = (j - 1) * B
         for b in 1:B
-            z = av[o+b]
+            z = avin[o+b]
             xr[jb+b] = real(z)
             xi[jb+b] = imag(z)
         end
@@ -954,7 +955,7 @@ function _stockham_pencil_batch!(av::AbstractVector{Complex{S}}, base::Int, st::
         o = base + (j - 1) * st - 1
         jb = (j - 1) * B
         for b in 1:B
-            av[o+b] = Complex{S}(xr[jb+b], xi[jb+b])
+            avout[o+b] = Complex{S}(xr[jb+b], xi[jb+b])
         end
     end
     return nothing

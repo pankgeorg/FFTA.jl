@@ -29,7 +29,8 @@ end
     x = randn(ComplexF64, n, n + 1, n + 2)
 
     @testset "against 1D array with mapslices, r=$r" for r in 1:3
-        @test fft(x, r) == mapslices(fft, x; dims = r)
+        # batched pencils round at ulp level differently per strategy
+        @test fft(x, r) ≈ mapslices(fft, x; dims = r)
     end
 end
 
