@@ -2,3 +2,5 @@
 docs/build
 benchmark/Manifest.toml
 benchmark/*/Manifest.toml
+benchmark/envs/
+benchmark/compare3_results/
