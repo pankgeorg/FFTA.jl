@@ -35,6 +35,15 @@ using PrecompileTools: @setup_workload, @compile_workload
                 xr = ones(T, n)
                 AbstractFFTs.irfft(AbstractFFTs.rfft(xr), n)
             end
+            # N-d plans: the kernels are shared, only the pencil loops are per dimensionality
+            for sz in ((8, 8), (8, 8, 8))
+                X = ones(Complex{T}, sz)
+                AbstractFFTs.bfft(AbstractFFTs.fft(X))
+                AbstractFFTs.fft(X, 1); AbstractFFTs.fft(X, 2)
+                Xr = ones(T, sz)
+                AbstractFFTs.irfft(AbstractFFTs.rfft(Xr), sz[1])
+                AbstractFFTs.irfft(AbstractFFTs.rfft(Xr, 1), sz[1], 1)
+            end
         end
     end
 end

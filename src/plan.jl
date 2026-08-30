@@ -17,6 +17,7 @@ distributed over them.
 """
 struct Worker{T,N,S<:Real}
     callgraph::NTuple{N,CallGraph{T}}
+    ibuf::Vector{T}   # contiguous copy of one input pencil (the kernels only ever see `Vector`s: one compiled specialisation per element type)
     obuf::Vector{T}   # transform output of one pencil before it is copied back
     buf::Vector{T}    # real<->complex packing scratch, see `_re_buflen` (real plans only)
     rbuf::Vector{S}   # contiguous copy of a strided real pencil, see `_re_pencil_loop!` (real plans only)
@@ -67,7 +68,7 @@ Base.getindex(wp::WorkerPool, i::Int) = (i > 1 && _ensure_workers!(wp); wp.worke
 function _clone_worker(w::Worker{T,N,S}) where {T,N,S}
     graphs = map(_clone_workspace, w.callgraph)
     push!(w.gathers, first(graphs)[1].type === POW2RADIX4_FFT ? first(graphs).workspace[1] : T[])
-    return Worker{T,N,S}(graphs, similar(w.obuf), similar(w.buf), similar(w.rbuf), similar(w.cbuf), w.rtw, w.gathers)
+    return Worker{T,N,S}(graphs, similar(w.ibuf), similar(w.obuf), similar(w.buf), similar(w.rbuf), similar(w.cbuf), w.rtw, w.gathers)
 end
 
 """
@@ -93,7 +94,7 @@ function _workers(cg::Tuple{CallGraph{T},Vararg{CallGraph{T}}}, ::Val{N}, num_th
     clen = rlen == 0 ? 0 : rlen ÷ 2 + 1
     rtw = _re_twiddles(T, rlen)
     gathers = [first(cg)[1].type === POW2RADIX4_FFT ? first(cg).workspace[1] : T[]]
-    w1 = Worker{T,N,S}(cg, Vector{T}(undef, obuflen), Vector{T}(undef, buflen), Vector{S}(undef, rlen), Vector{T}(undef, clen), rtw, gathers)
+    w1 = Worker{T,N,S}(cg, Vector{T}(undef, obuflen), Vector{T}(undef, obuflen), Vector{T}(undef, buflen), Vector{S}(undef, rlen), Vector{T}(undef, clen), rtw, gathers)
     return WorkerPool{T,N,S}([w1], num_threads, ReentrantLock())
 end
 
@@ -288,7 +289,14 @@ function LinearAlgebra.mul!(y::AbstractVector{U}, p::FFTAPlan_cx{T,1}, x::Abstra
     if size(p) != size(x)
         throw(DimensionMismatch("plan has axes $(size(p)), but input array has axes $(size(x))"))
     end
-    _kernel_1d!(y, x, p.dir, p.callgraph[1], p.workers)
+    if x isa Vector{T} && y isa Vector{U}
+        _kernel_1d!(y, x, p.dir, p.callgraph[1], p.workers)
+    else
+        w = p.workers.workers[1]
+        copyto!(w.ibuf, x)
+        _kernel_1d!(w.obuf, w.ibuf, p.dir, p.callgraph[1], p.workers)
+        copyto!(y, w.obuf)
+    end
     return y
 end
 
@@ -380,9 +388,19 @@ function _mul_loop!(
     ::Val{R}
 ) where {T,U,N,R}
     dir = p.dir
+    n = size(x, R)
     _foreach_pencil(x, Val(R), p.workers) do w, Ipre, Ipost
         cg = w.callgraph[1]
-        @views fft_kernel!(y[Ipre,:,Ipost], x[Ipre,:,Ipost], 1, 1, dir, cg[1].type, cg, 1)
+        ibuf = w.ibuf; obuf = w.obuf
+        xp = @view x[Ipre, :, Ipost]
+        yp = @view y[Ipre, :, Ipost]
+        @inbounds for j in 1:n
+            ibuf[j] = xp[j]
+        end
+        fft_kernel!(obuf, ibuf, 1, 1, dir, cg[1].type, cg, 1)
+        @inbounds for j in 1:n
+            yp[j] = obuf[j]
+        end
     end
 end
 
@@ -481,9 +499,12 @@ function fft_along_dim!(
     n = size(A, dim)
     _foreach_pencil(A, Val(dim), workers) do w, Ipre, Ipost
         cg = w.callgraph[k]
-        obuf = w.obuf
+        ibuf = w.ibuf; obuf = w.obuf
         pencil = @view A[Ipre, :, Ipost]
-        fft_kernel!(obuf, pencil, 1, 1, d, cg[1].type, cg, 1)
+        @inbounds for j in 1:n
+            ibuf[j] = pencil[j]
+        end
+        fft_kernel!(obuf, ibuf, 1, 1, d, cg[1].type, cg, 1)
         @inbounds for j in 1:n
             pencil[j] = obuf[j]
         end
@@ -567,7 +588,9 @@ function _rfft_pencil!(y::AbstractVector{T}, x::AbstractVector{<:Real}, w::Worke
         # processing 35, no. 6 (2003): 849-863.
         m = n >> 1
         _pack_pairs!(buf, x, m)
-        _kernel_1d!(view(y, 1:m), buf, FFT_FORWARD, cg, w.gathers)
+        obuf = w.obuf                      # kernels only see `Vector`s (see `Worker`)
+        _kernel_1d!(obuf, buf, FFT_FORWARD, cg, w.gathers)
+        copyto!(y, 1, obuf, 1, m)
 
         # Construct the result by first constructing the elements of the
         # real and imaginary part, followed by the usual radix-2 assembly,
@@ -609,8 +632,8 @@ function _brfft_pencil!(x::AbstractVector{<:Real}, y::AbstractVector{T}, w::Work
     if iseven(n)
         # Inverse of the even-length trick in `_rfft_pencil!`.
         m = n >> 1
-        tmp = view(buf, 1:m)
-        out = view(buf, m + 1:2m)
+        tmp = w.ibuf
+        out = w.obuf
         rtw = w.rtw
         @inbounds tmp[1] = T(real(y[1]) + real(y[m + 1]), real(y[1]) - real(y[m + 1]))
         _brfft_pre_simd!(tmp, y, m, rtw) || @inbounds for j in 2:((m >> 1) + 1)
@@ -625,8 +648,8 @@ function _brfft_pencil!(x::AbstractVector{<:Real}, y::AbstractVector{T}, w::Work
     else
         # Odd length: rebuild the conjugate-symmetric spectrum and transform.
         h = n ÷ 2 + 1
-        tmp = view(buf, 1:n)
-        out = view(buf, n + 1:2n)
+        tmp = w.ibuf
+        out = w.obuf
         @inbounds for j in 1:h
             tmp[j] = y[j]
         end
@@ -651,6 +674,8 @@ end
 # Apply `kernel!(y_pencil, x_pencil, worker, flen)` along dimension `R` of `x` and `y`.
 function _re_pencil_loop!(kernel!::F, y::AbstractArray{<:Any,N}, x::AbstractArray{<:Any,N}, p::FFTAPlan_re, ::Val{R}) where {F,N,R}
     n = p.flen
+    # (the pencil views never reach the kernels: `_rfft_pencil!`/`_brfft_pencil!`
+    # pack them into the worker's `Vector` buffers first)
     if R == 1 && _unit_stride(x) && _unit_stride(y)
         _foreach_pencil(x, Val(R), p.workers) do w, Ipre, Ipost
             @views kernel!(y[Ipre, :, Ipost], x[Ipre, :, Ipost], w, n)
@@ -705,7 +730,12 @@ function LinearAlgebra.mul!(y::AbstractArray{T,N}, p::FFTAPlan_re{T,1}, x::Abstr
     _check_re_dims(y, p, x, d1, true)
     if N == 1
         _prepare_1d!(p.callgraph[1], p.workers)
-        _rfft_pencil!(y, x, p.workers.workers[1], p.flen)
+        w = p.workers.workers[1]
+        if x isa Vector && y isa Vector
+            _rfft_pencil!(y, x, w, p.flen)
+        else
+            copyto!(w.rbuf, x); _rfft_pencil!(w.cbuf, w.rbuf, w, p.flen); copyto!(y, w.cbuf)
+        end
     else
         _re_along_dim!(_rfft_pencil!, y, x, p, d1)
     end
@@ -722,7 +752,12 @@ function LinearAlgebra.mul!(y::AbstractArray{<:Real,N}, p::FFTAPlan_re{T,1}, x::
     _check_re_dims(y, p, x, d1, false)
     if N == 1
         _prepare_1d!(p.callgraph[1], p.workers)
-        _brfft_pencil!(y, x, p.workers.workers[1], p.flen)
+        w = p.workers.workers[1]
+        if x isa Vector && y isa Vector
+            _brfft_pencil!(y, x, w, p.flen)
+        else
+            copyto!(w.cbuf, x); _brfft_pencil!(w.rbuf, w.cbuf, w, p.flen); copyto!(y, w.rbuf)
+        end
     else
         _re_along_dim!(_brfft_pencil!, y, x, p, d1)
     end
