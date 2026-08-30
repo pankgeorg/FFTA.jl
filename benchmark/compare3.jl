@@ -29,7 +29,8 @@ run is therefore
 
 Environments are created under `envs/NAME/` (git-ignored) and re-used; delete
 one to rebuild it. `--skip-existing` keeps a column whose complete JSON file
-is already in `--out` (e.g. to add one column to a finished run). Per-run JSON files land in `--out` (default
+is already in `--out` and whose recorded case selection covers the current
+one (e.g. to add one column to a finished run); otherwise it is re-measured. Per-run JSON files land in `--out` (default
 `compare3_results/`) as `NAME_tN.json`; `--render-only` re-renders the table
 from them without benchmarking.
 =#
@@ -89,11 +90,34 @@ function ensure_env(impl)
     return dir
 end
 
+# Does the case selection recorded in a results file cover the current one?
+# (files without a recorded scope — older runs — are accepted with a warning)
+function scope_covers(meta)
+    haskey(meta, "scope") || (@warn "results file has no recorded scope; assuming it covers this run"; return true)
+    sc = meta["scope"]
+    cur_only = split(getopt("--only", "1d,nd,batched,threads"), ",")
+    cur_kinds = split(getopt("--kinds", "fft,rfft"), ",")
+    cur_classes = split(getopt("--classes", "pow2,smooth,prime,awkward"), ",")
+    cur_maxlog2 = parse(Int, getopt("--maxlog2", QUICK ? "14" : "22"))
+    cur_sizes = let v = getopt("--sizes", ""); isempty(v) ? Int[] : parse.(Int, split(v, ",")) end
+    ok = all(o -> o in sc["only"] || (o == "threads"), cur_only) &&   # (the threads section is empty at 1 thread)
+         all(k -> k in sc["kinds"], cur_kinds) &&
+         (!("1d" in cur_only) || all(c -> c in sc["classes"], cur_classes)) &&
+         sc["maxlog2"] >= cur_maxlog2 &&
+         (isempty(sc["sizes"]) || (!isempty(cur_sizes) && all(n -> n in sc["sizes"], cur_sizes)))
+    return ok
+end
+
 function run_worker(impl, nthreads)
     out = joinpath(OUTDIR, "$(impl.name)_t$(nthreads).json")
-    if "--skip-existing" in ARGS && isfile(out) && get(JSON.parsefile(out), "complete", false)
-        @info "keeping existing results" impl.name nthreads out
-        return out
+    if "--skip-existing" in ARGS && isfile(out)
+        d = JSON.parsefile(out)
+        if get(d, "complete", false) && scope_covers(d["meta"])
+            @info "keeping existing results" impl.name nthreads out
+            return out
+        else
+            @warn "existing results do not cover this run (incomplete or narrower scope); re-measuring" impl.name nthreads out
+        end
     end
     dir = ensure_env(impl)
     kind = impl.spec == "fftw" ? "fftw" : "ffta"

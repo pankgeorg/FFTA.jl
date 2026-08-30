@@ -81,7 +81,10 @@ end
 const RESULTS = Dict{String,Any}[]
 const META = Dict("impl" => IMPL, "version" => VERSION_STR, "julia" => string(VERSION),
                   "threads" => NTHREADS, "arch" => String(Sys.ARCH), "cpu" => Sys.CPU_NAME,
-                  "date" => string(now(UTC)), "seconds" => SECONDS)
+                  "date" => string(now(UTC)), "seconds" => SECONDS,
+                  # the case selection this column covers (checked by `--skip-existing`)
+                  "scope" => Dict("only" => ONLY, "kinds" => String.(collect(KINDS)), "classes" => CLASSES,
+                                  "maxlog2" => MAXLOG2, "sizes" => SIZES, "measure" => MEASURE))
 function flush_results(complete)
     open(OUTFILE, "w") do io
         JSON.print(io, Dict("meta" => META, "complete" => complete, "results" => RESULTS), 1)
