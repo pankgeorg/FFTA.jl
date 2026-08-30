@@ -63,6 +63,26 @@ The committed [`REPORT.md`](REPORT.md) was produced on the machine described
 in its *Environment* section; re-run the suite to obtain numbers for your own
 hardware.
 
+## Several implementations side by side (`compare3.jl`)
+
+```bash
+cd benchmark
+julia --project=. compare3.jl                        # FFTW vs FFTA 0.3.1 (registry) vs this checkout
+julia --project=. compare3.jl --impl fftw=fftw --impl int=/path/to/base --impl new=/path/to/branch --ref int \
+                              --threads 1,4,16 --only nd,batched
+```
+
+Each `--impl NAME=SPEC` column runs in its own process and environment
+(`envs/NAME/`, git-ignored): `fftw`, `@0.3.1` (an FFTA version from the
+registry) or a path to an FFTA checkout / worktree. The same case list as
+`suite.jl` (`cases.jl`; the `--only/--kinds/--maxlog2/--sizes/--seconds`
+options apply) is run per thread count in `--threads`, and one markdown
+table (`compare3_results/COMPARE3.md`) shows the times, each column's ratio
+to the first column and its speedup over the `--ref` column, with per-class
+geometric means and, for several thread counts, the thread scaling.
+Results are checksummed against the first column. `--render-only`
+re-renders the table from the JSON files of a previous run.
+
 ## Original 1D suite (`run_benchmarks.jl`)
 
 ## Structure
