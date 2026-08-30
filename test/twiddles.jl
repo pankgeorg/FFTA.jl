@@ -119,7 +119,7 @@ end
     # generic element types keep the power of two (no Stockham engine)
     @test FFTA.bluestein_pad_length(Complex{BigFloat}, 4099) == 16384
     @test FFTA.bluestein_pad_length(8443) == 18432       # 9·2^11
-    @test FFTA.bluestein_pad_length(73; factor = 1.0) == 256          # below the 2048 floor
+    @test FFTA.bluestein_pad_length(73) == 160                        # 5·2^5 via the model
 end
 
 @testset "planned execution does not allocate, n=$n" for n in (5, 47, 64, 73, 101, 720, 1000, 1009, 4096, 65537)
