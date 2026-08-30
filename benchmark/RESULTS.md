@@ -96,4 +96,4 @@ Time of the `DSP.jl` testset (from the test summary, excludes compilation) for D
 | FFTW | 438 s | 433 s |
 | FFTA | 787 s | 787 s |
 
-The whole difference is `test/dsp.jl` (`conv`/`xcorr`/`deconv` over many small odd sizes, one-shot calls): 224 s on FFTW, 570 s on FFTA; every other testset is within 10 % (`Filters` 138 vs 139 s, `Periodograms` 31 vs 30 s). FFTA plans on every one-shot call and plan construction dominates at those sizes, not the transform.
+The whole difference is `test/dsp.jl` (`conv`/`xcorr`/`deconv`): 224 s on FFTW, 570 s on FFTA; every other testset is within 10 %. `dsp_cases.jl` replays that file's FFT calls and separates the causes (`DSP_CASES.md`): the transforms themselves account for ~1.5 s of it (2-D/3-D convolutions at 7-smooth sizes such as 140 = 2²·5·7, where FFTA's 1-D kernel is 3× FFTW's); the rest is **first-call compilation** — FFTA's generated codelets are specialised on the input array type, and the N-d path passes strided views, so every new (element type, dimensionality) combination recompiles them; the Float32 wide-lane codelets take ~45 s each (2-D and 3-D Float32 real plans: 43 s and 58 s on first use, 0.6 ms after).

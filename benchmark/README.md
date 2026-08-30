@@ -21,6 +21,13 @@ per-case table (`COMPARE3.md`). Options: `--threads`, `--only 1d,nd,batched`,
 `--classes`, `--kinds fft,rfft`, `--maxlog2`, `--seconds`, `--skip-existing`
 (reuse a finished column whose case selection covers the run).
 
+`dsp_cases.jl` replays the FFT calls DSP.jl's `conv` makes over the size/type
+patterns of its test suite (one-shot, planning every time) on FFTA and FFTW,
+with a first-call (compilation) column, and `nd_stages.jl` times an N-d
+transform one dimension at a time; both write to `dsp_cases_results/`,
+summarised in `DSP_CASES.md`. Iterate with `julia --project=. dsp_cases.jl --quick`
+(~3 min, most of it FFTA's first calls).
+
 Other files: `kernel_stages.jl` / `KERNEL_STAGES.md` — where the time goes
 inside the kernels (stage breakdown); `ANALYSIS.md` — design analysis of the
 implementation gaps and structural limits; `suite.jl`/`report.jl` — the

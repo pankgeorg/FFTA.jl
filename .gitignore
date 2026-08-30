@@ -4,3 +4,4 @@ benchmark/Manifest.toml
 benchmark/*/Manifest.toml
 benchmark/envs/
 benchmark/compare3_results/
+benchmark/dsp_cases_results/
