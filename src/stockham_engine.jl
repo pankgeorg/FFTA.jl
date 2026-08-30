@@ -174,7 +174,8 @@ end
 @generated function _svbroad(::Type{Vec{W,S}}, t::NTuple{N,S}) where {W,S,N}
     :(@inbounds $(Expr(:tuple, (:(Vec{W,S}(t[$i])) for i in 1:N)...)))
 end
-@generated function _sbfp(xr::NTuple{P,V}, xi::NTuple{P,V}, cc::NTuple{HH,C}, ss::NTuple{HH,C}) where {P,V,C,HH}
+@generated function _sbfp(xr::NTX, xi::NTX, cc::NTC, ss::NTC) where {NTX<:Tuple,NTC<:Tuple}
+    P = length(NTX.parameters)
     h = (P - 1) >> 1
     body = Expr[]
     for j in 1:h
