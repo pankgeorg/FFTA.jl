@@ -526,6 +526,38 @@ Transform every pencil of `A` along dimension `dim` in place, using the `k`-th
 call graph of the workers. The kernels read the (strided) pencil directly and
 write the worker's output buffer, which is then copied back.
 """
+function _batch_along_dim!(av::Vector{T}, npre::Int, n::Int, npost::Int, B::Int,
+                           d::Direction, pool::WorkerPool) where {T<:Complex}
+    S = real(T)
+    D = direction_sign(d)
+    stages = _stockham_batch_stages(S, n, D, B)
+    nbp = npre ÷ B
+    total = nbp * npost
+    nt = min(length(pool), total ÷ 2)
+    if nt > 1 && total * n * B >= THREAD_THRESHOLD
+        bufs = [ntuple(_ -> Vector{S}(undef, n * B), Val(4)) for _ in 1:nt]
+        @batch for c in 1:nt
+            lo = (c - 1) * total ÷ nt + 1
+            hi = c * total ÷ nt
+            xr, xi, yr, yi = bufs[c]
+            for k in lo:hi
+                kpost, kpre = divrem(k - 1, nbp)
+                base = kpre * B + 1 + kpost * npre * n
+                _stockham_pencil_batch!(av, base, npre, B, D, n, stages, xr, xi, yr, yi)
+            end
+        end
+    else
+        xr = Vector{S}(undef, n * B); xi = Vector{S}(undef, n * B)
+        yr = Vector{S}(undef, n * B); yi = Vector{S}(undef, n * B)
+        for k in 1:total
+            kpost, kpre = divrem(k - 1, nbp)
+            base = kpre * B + 1 + kpost * npre * n
+            _stockham_pencil_batch!(av, base, npre, B, D, n, stages, xr, xi, yr, yi)
+        end
+    end
+    return nothing
+end
+
 function fft_along_dim!(
     A::AbstractArray{U,N},
     workers::WorkerPool{T,M},
@@ -551,6 +583,21 @@ function fft_along_dim!(
             end
         end
         return nothing
+    end
+    if A isa Array{T,N} && workers.workers[1].callgraph[k][1].type === STOCKHAM
+        # batched pencils: `B` adjacent dim-1-contiguous pencils per kernel run
+        S = real(T)
+        W = _stockham_width(S)
+        npre = 1
+        for i in 1:dim-1
+            npre *= size(A, i)
+        end
+        B = npre % 16 == 0 && 16 % W == 0 ? 16 :
+            npre % 8 == 0 && 8 % W == 0 ? 8 : 0
+        if B > 0
+            _batch_along_dim!(vec(A), npre, n, length(A) ÷ (npre * n), B, d, workers)
+            return nothing
+        end
     end
     _foreach_pencil(A, Val(dim), workers) do w, Ipre, Ipost
         cg = w.callgraph[k]

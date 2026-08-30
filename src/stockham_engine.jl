@@ -199,7 +199,7 @@ function StockhamChain{S}(n::Int, dir::Direction, nt::Int=1) where {S<:Real}
                             Vector{S}(undef, n), Vector{S}(undef, n), max(nt, 1))
 end
 
-function _stockham_build_stages(::Type{S}, n::Int, D::Int) where {S<:Real}
+function _stockham_build_stages(::Type{S}, n::Int, D::Int; s0::Int=1) where {S<:Real}
     a = trailing_zeros(n)
     r = n >> a
     ps = Pair{Int,Int}[]
@@ -216,7 +216,7 @@ function _stockham_build_stages(::Type{S}, n::Int, D::Int) where {S<:Real}
     k4 = (a - trailing_zeros(f)) ÷ 2
     stages = StockhamStage{S}[]
     ncur = n
-    s = 1
+    s = s0
     for _ in 1:k4
         push!(stages, _stockham_stage(S, 4, ncur, D, s))
         s *= 4
@@ -893,3 +893,69 @@ end
 @inline _stagep_dir!(yr, yi, xr, xi, n, s, tw, vp, D, lo, hi, qlo, qhi) =
     D == -1 ? _stagep!(yr, yi, xr, xi, n, s, tw, vp, Val(-1), lo, hi, qlo, qhi) :
     _stagep!(yr, yi, xr, xi, n, s, tw, vp, Val(1), lo, hi, qlo, qhi)
+
+# ---------------------------------------------------------------------------
+# batched pencils: `B` adjacent contiguous pencils run through the same stage
+# kernels at once by building the chain with initial stride `B` — every lane
+# block holds `B` pencils, so gathers/scatters stream contiguous runs and the
+# butterflies vectorise across pencils. (Used for dims > 1 of N-d arrays.)
+# ---------------------------------------------------------------------------
+const _STOCKHAM_BATCH_LOCK = ReentrantLock()
+const _STOCKHAM_BATCH_CACHE = Dict{Tuple{DataType,Int,Int,Int},Any}()
+function _stockham_batch_stages(::Type{S}, n::Int, D::Int, B::Int) where {S<:Real}
+    key = (S, n, D, B)
+    r = lock(_STOCKHAM_BATCH_LOCK) do
+        get!(() -> _stockham_build_stages(S, n, D; s0=B), _STOCKHAM_BATCH_CACHE, key)
+    end
+    return r::Vector{StockhamStage{S}}
+end
+
+"transform `B` pencils `av[base + (b-1) + (j-1)*st]`, `b in 1:B`, in place"
+function _stockham_pencil_batch!(av::AbstractVector{Complex{S}}, base::Int, st::Int, B::Int,
+                                 D::Int, n::Int, stages::Vector{StockhamStage{S}},
+                                 xr::Vector{S}, xi::Vector{S}, yr::Vector{S}, yi::Vector{S}) where {S}
+    @inbounds for j in 1:n
+        o = base + (j - 1) * st - 1
+        jb = (j - 1) * B
+        for b in 1:B
+            z = av[o+b]
+            xr[jb+b] = real(z)
+            xi[jb+b] = imag(z)
+        end
+    end
+    W = _stockham_width(S)
+    Vd = D == -1 ? Val(-1) : Val(1)
+    s = B
+    ncur = n
+    for tw in stages
+        R = tw.R
+        if R == 4
+            _stage4!(yr, yi, xr, xi, ncur, s, tw, Vd, 1, ncur >> 2)
+        elseif R == 2
+            _stage2!(yr, yi, xr, xi, s, 1, cld(s, W))
+        elseif R == 8
+            _stage8!(yr, yi, xr, xi, s, Vd, 1, cld(s, W))
+        elseif R == 3
+            _stagep_dir!(yr, yi, xr, xi, ncur, s, tw, Val(3), D, 1, ncur ÷ 3, 1, cld(s, W))
+        elseif R == 5
+            _stagep_dir!(yr, yi, xr, xi, ncur, s, tw, Val(5), D, 1, ncur ÷ 5, 1, cld(s, W))
+        elseif R == 7
+            _stagep_dir!(yr, yi, xr, xi, ncur, s, tw, Val(7), D, 1, ncur ÷ 7, 1, cld(s, W))
+        elseif R == 11
+            _stagep_dir!(yr, yi, xr, xi, ncur, s, tw, Val(11), D, 1, ncur ÷ 11, 1, cld(s, W))
+        else
+            _stagep_dir!(yr, yi, xr, xi, ncur, s, tw, Val(13), D, 1, ncur ÷ 13, 1, cld(s, W))
+        end
+        s *= R
+        ncur ÷= R
+        xr, xi, yr, yi = yr, yi, xr, xi
+    end
+    @inbounds for j in 1:n
+        o = base + (j - 1) * st - 1
+        jb = (j - 1) * B
+        for b in 1:B
+            av[o+b] = Complex{S}(xr[jb+b], xi[jb+b])
+        end
+    end
+    return nothing
+end
