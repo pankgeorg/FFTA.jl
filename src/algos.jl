@@ -20,7 +20,7 @@ function fft_kernel!(
         if t === DFT
             fft_dft!(out, in, N, start_out, s_out, start_in, s_in, tw)
         elseif t === POW2RADIX4_FFT
-            fft_pow2_radix4!(out, in, N, start_out, s_out, start_in, s_in, d, tw, 0)
+            fft_pow2_radix4!(out, in, N, start_out, s_out, start_in, s_in, d, tw, 0, g.workspace[idx])
         elseif t === POW3_FFT
             _m_120 = cispi(T(2) / 3)
             m_120 = d === FFT_FORWARD ? _m_120 : conj(_m_120)
@@ -185,6 +185,8 @@ Radix-4 FFT for powers of 2, in place
 - `d`: Direction of the transform
 - `tw`: Twiddle table, see `pow2_twiddles` (omit it to compute the table on the fly)
 - `toff`: Offset of the current recursion level in `tw`
+- `buf`: Gather buffer for the leaves-first order of large transforms (see
+  `leaffirst_buflen`; `nothing` or empty to use the plain recursion)
 
 """
 function fft_pow2_radix4!(
@@ -193,8 +195,15 @@ function fft_pow2_radix4!(
     start_out::Int, stride_out::Int,
     start_in::Int, stride_in::Int,
     d::Direction,
-    tw::AbstractVector{T}, toff::Int
+    tw::AbstractVector{T}, toff::Int,
+    buf::Union{Nothing,AbstractVector{T}} = nothing
 ) where {T<:Complex, U}
+    # Large transforms: leaves first, gathered through `buf` (see leaffirst.jl)
+    if buf !== nothing && !isempty(buf) && N >= LEAFFIRST_MIN && stride_out == 1
+        _pow2_leaffirst!(out, in, N, start_out, start_in, stride_in, d, tw, toff, buf)
+        return
+    end
+
     # If N is 2, compute the size two DFT
     @inbounds if N == 2
         out[start_out]              = in[start_in] + in[start_in + stride_in]
@@ -236,6 +245,22 @@ function fft_pow2_radix4!(
     fft_pow2_radix4!(out, in, m, start_out +   m*stride_out, stride_out, start_in +   stride_in, stride_in*4, d, tw, toff_next)
     fft_pow2_radix4!(out, in, m, start_out + 2*m*stride_out, stride_out, start_in + 2*stride_in, stride_in*4, d, tw, toff_next)
     fft_pow2_radix4!(out, in, m, start_out + 3*m*stride_out, stride_out, start_in + 3*stride_in, stride_in*4, d, tw, toff_next)
+
+    _pow2_pass!(out, m, start_out, stride_out, d, tw, toff)
+end
+
+"""
+$(TYPEDSIGNATURES)
+One radix-4 butterfly pass combining the four quarter transforms of size `m`
+stored at `out[start_out + k*stride_out]`, `k = 0..4m-1`, with the twiddles of
+this level at `tw[toff+1:toff+3m]`.
+"""
+function _pow2_pass!(out::AbstractVector{T}, m::Int, start_out::Int, stride_out::Int, d::Direction,
+                     tw::AbstractVector{T}, toff::Int) where {T}
+    dir = direction_sign(d)
+    minusi = -dir * im
+    # vectorised butterfly pass for the floating-point types (see simd_pass.jl)
+    _pow2_pass_simd!(out, m, start_out, stride_out, d, tw, toff) && return
 
     @inbounds for k in 0:m-1
         wkoe = tw[toff + 3k + 1]
