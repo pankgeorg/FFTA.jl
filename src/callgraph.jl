@@ -1,6 +1,6 @@
 @enum Direction FFT_FORWARD=-1 FFT_BACKWARD=1
 @enum Pow24 POW2 POW4
-@enum FFTEnum COMPOSITE_FFT DFT POW3_FFT POW2RADIX4_FFT BLUESTEIN
+@enum FFTEnum COMPOSITE_FFT DFT POW3_FFT POW2RADIX4_FFT BLUESTEIN POW5_FFT POW7_FFT
 
 @inline function direction_sign(d::Direction)
     Int(d)
@@ -118,12 +118,21 @@ function CallGraphNode!(
         throw(DimensionMismatch("Array length must be strictly positive"))
     end
     if iseven(N) && ispow2(N)
-        push!(workspace, T[])
+        push!(workspace, Vector{T}(undef, leaffirst_buflen(T, N)))
         push!(nodes, CallGraphNode(0, 0, POW2RADIX4_FFT, N, s_in, s_out))
         return 1
     elseif N % 3 == 0 && nextpow(3, N) == N
         push!(workspace, T[])
         push!(nodes, CallGraphNode(0, 0, POW3_FFT, N, s_in, s_out))
+        return 1
+    elseif T <: CodeletEltype && N % 5 == 0 && nextpow(5, N) == N
+        # radix-5/7 kernels use the odd codelets as butterflies (see fft_powr!)
+        push!(workspace, T[])
+        push!(nodes, CallGraphNode(0, 0, POW5_FFT, N, s_in, s_out))
+        return 1
+    elseif T <: CodeletEltype && N % 7 == 0 && nextpow(7, N) == N
+        push!(workspace, T[])
+        push!(nodes, CallGraphNode(0, 0, POW7_FFT, N, s_in, s_out))
         return 1
     elseif N == 1 || Primes.isprime(N)
         push!(workspace, T[])
@@ -294,6 +303,32 @@ end
 
 """
 $(TYPEDSIGNATURES)
+Twiddle table for the radix-`R` kernel `fft_powr!` (`R` = 5 or 7), laid out
+like `pow3_twiddles`: for every level of size `M = N, N/R, …` (excluding the
+`R`-point base case) the tuples `(w^k, w^2k, …, w^(R-1)k)`, `w = exp(dir · 2πi/M)`,
+for `k = 0..M/R-1`.
+"""
+function powr_twiddles(::Type{T}, N::Int, R::Int, dir::Direction) where {T}
+    N > R || return T[]
+    W = unit_roots(T, N, dir)
+    tw = Vector{T}(undef, N)   # (R-1)N/R + (R-1)N/R² + ... < N
+    i = 1
+    M = N
+    while M > R
+        m = M ÷ R
+        s = N ÷ M
+        for k in 0:m-1, r in 1:R-1
+            tw[i] = W[(r * s * k) % N + 1]
+            i += 1
+        end
+        M = m
+    end
+    resize!(tw, i - 1)
+    return tw
+end
+
+"""
+$(TYPEDSIGNATURES)
 Twiddle table of the node at index `idx` of `nodes`, see `dft_twiddles`,
 `composite_twiddles`, `pow2_twiddles` and `pow3_twiddles`. `BLUESTEIN` nodes
 keep their data in a `BluesteinScratch` instead and get an empty table.
@@ -311,6 +346,10 @@ function node_twiddles(::Type{T}, nodes::Vector{CallGraphNode}, idx::Int, dir::D
         return pow2_twiddles(T, N, dir)
     elseif node.type === POW3_FFT
         return pow3_twiddles(T, N, dir)
+    elseif node.type === POW5_FFT
+        return powr_twiddles(T, N, 5, dir)
+    elseif node.type === POW7_FFT
+        return powr_twiddles(T, N, 7, dir)
     else
         return T[]
     end
