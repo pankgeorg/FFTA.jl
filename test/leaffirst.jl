@@ -22,13 +22,13 @@ end
     n = 1 << k
     rtol = T === Float64 ? 1e-9 : 1e-3
     x = randn(Complex{T}, n)
-    p = plan_fft(x)
+    p = plan_fft(x; num_threads = 1)
     y = p * x
     @test y ≈ rebuilt_fft(x) rtol = rtol
     @test bfft(y) ≈ n .* x rtol = rtol
     @test (@allocated mul!(y, p, x)) == 0
     xr = randn(T, n)
-    pr = plan_rfft(xr)
+    pr = plan_rfft(xr; num_threads = 1)
     yr = pr * xr
     @test yr ≈ fft(complex(xr))[1:n÷2+1] rtol = rtol
     @test brfft(yr, n) ≈ n .* xr rtol = rtol
