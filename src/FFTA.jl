@@ -36,8 +36,13 @@ using PrecompileTools: @setup_workload, @compile_workload
                 xr = ones(T, n)
                 AbstractFFTs.irfft(AbstractFFTs.rfft(xr), n)
             end
+            # in-place complex plans and the backward real transform (DSP-style
+            # convolution code exercises these on every call)
+            AbstractFFTs.bfft!(AbstractFFTs.fft!(ones(Complex{T}, 60)))
+            AbstractFFTs.bfft!(AbstractFFTs.fft!(ones(Complex{T}, 8, 8)))
+            AbstractFFTs.brfft(AbstractFFTs.rfft(ones(T, 60)), 60)
             # N-d plans: the kernels are shared, only the pencil loops are per dimensionality
-            for sz in ((8, 8), (8, 8, 8), (4, 4, 4, 4))
+            for sz in ((8, 8), (8, 8, 8), (5, 5, 5), (4, 4, 4, 4), (2, 2, 2, 2, 2), (2, 2, 2, 2, 2, 2))
                 X = ones(Complex{T}, sz)
                 AbstractFFTs.bfft(AbstractFFTs.fft(X))
                 AbstractFFTs.fft(X, 1); AbstractFFTs.fft(X, 2)

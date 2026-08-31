@@ -364,6 +364,9 @@ split into one contiguous chunk per worker and the chunks run as parallel
 tasks, each using its own worker (so its own call-graph workspace and
 buffers). Results do not depend on the number of threads.
 """
+# product of the sizes before `dim` (the pencil element stride), type-stably
+@inline _prestride(A, ::Val{dim}) where {dim} = prod(ntuple(i -> size(A, i), Val(dim - 1)))
+
 function _foreach_pencil(f::F, A::AbstractArray{<:Any,N}, ::Val{dim}, pool::WorkerPool) where {F,N,dim}
     Rpre  = CartesianIndices(ntuple(Base.Fix1(size, A), Val(dim - 1)))
     Rpost = CartesianIndices(ntuple(i -> size(A, dim + i), Val(N - dim)))
@@ -426,6 +429,24 @@ function _mul_loop!(
             _batch_along_dim!(vec(y), vec(x), npre, n, length(x) ÷ (npre * n), B, dir, p.workers)
             return nothing
         end
+    end
+    if x isa Array{T,N} && y isa Array{T,N}
+        xvs = vec(x); yvs = vec(y)
+        lis = LinearIndices(x)
+        st = _prestride(x, Val(R))
+        _foreach_pencil(x, Val(R), p.workers) do w, Ipre, Ipost
+            cg = w.callgraph[1]
+            ibuf = w.ibuf; obuf = w.obuf
+            base = lis[Ipre, 1, Ipost]
+            @inbounds for j in 1:n
+                _sst!(ibuf, j, _sget(xvs, base + (j - 1) * st))
+            end
+            fft_kernel!(obuf, ibuf, 1, 1, dir, cg[1].type, cg, 1)
+            @inbounds for j in 1:n
+                _sst!(yvs, base + (j - 1) * st, _sget(obuf, j))
+            end
+        end
+        return nothing
     end
     _foreach_pencil(x, Val(R), p.workers) do w, Ipre, Ipost
         cg = w.callgraph[1]
@@ -615,6 +636,26 @@ function fft_along_dim!(
             return nothing
         end
     end
+    if A isa Array{T,N}
+        # strided pencils of a dense array: flag-independent pointer copies
+        # instead of bounds-checked view indexing (`--check-bounds=yes`)
+        avs = vec(A)
+        lis = LinearIndices(A)
+        st = _prestride(A, Val(dim))
+        _foreach_pencil(A, Val(dim), workers) do w, Ipre, Ipost
+            cg = w.callgraph[k]
+            ibuf = w.ibuf; obuf = w.obuf
+            base = lis[Ipre, 1, Ipost]
+            @inbounds for j in 1:n
+                _sst!(ibuf, j, _sget(avs, base + (j - 1) * st))
+            end
+            fft_kernel!(obuf, ibuf, 1, 1, d, cg[1].type, cg, 1)
+            @inbounds for j in 1:n
+                _sst!(avs, base + (j - 1) * st, _sget(obuf, j))
+            end
+        end
+        return nothing
+    end
     _foreach_pencil(A, Val(dim), workers) do w, Ipre, Ipost
         cg = w.callgraph[k]
         ibuf = w.ibuf; obuf = w.obuf
@@ -799,6 +840,25 @@ function _re_pencil_loop!(kernel!::F, y::AbstractArray{<:Any,N}, x::AbstractArra
             @views kernel!(y[Ipre, :, Ipost], x[Ipre, :, Ipost], w, n)
         end
     else
+        if x isa Array && y isa Array && eltype(x) === eltype(_pencil_buffers(kernel!, p.workers.workers[1])[1]) &&
+           eltype(y) === eltype(_pencil_buffers(kernel!, p.workers.workers[1])[2])
+            xv = vec(x); yv = vec(y)
+            lix = LinearIndices(x); liy = LinearIndices(y)
+            stx = _prestride(x, Val(R)); sty = _prestride(y, Val(R))
+            nin = size(x, R); nout = size(y, R)
+            _foreach_pencil(x, Val(R), p.workers) do w, Ipre, Ipost
+                xin, yout = _pencil_buffers(kernel!, w)
+                bx = lix[Ipre, 1, Ipost]; by = liy[Ipre, 1, Ipost]
+                @inbounds for j in 1:nin
+                    _sst!(xin, j, _sget(xv, bx + (j - 1) * stx))
+                end
+                kernel!(yout, xin, w, n)
+                @inbounds for j in 1:nout
+                    _sst!(yv, by + (j - 1) * sty, _sget(yout, j))
+                end
+            end
+            return y
+        end
         _foreach_pencil(x, Val(R), p.workers) do w, Ipre, Ipost
             xin, yout = _pencil_buffers(kernel!, w)   # per worker: no sharing between tasks
             copyto!(xin, @view x[Ipre, :, Ipost])
