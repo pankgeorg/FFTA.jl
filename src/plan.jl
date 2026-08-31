@@ -102,32 +102,39 @@ end
 # Transforms with fewer elements than this are not split over threads.
 const THREAD_THRESHOLD = 1 << 15
 
-mutable struct FFTAPlan_cx{T,N,R<:RegionTypes{N},S<:Real} <: FFTAPlan{T,N}
+# Regions are stored canonically as a sorted `NTuple{N,Int}`, so plan types
+# do not vary with how callers spell the dims — downstream code that
+# specializes on plan types (DSP.jl's conv kernels, for example) compiles one
+# method instance per (T, N) instead of one per region spelling.
+_canon_region(r::Int, ::Val{1}) = (r,)
+_canon_region(r::RegionTypes, ::Val{N}) where {N} = ntuple(i -> Int(r[i]), Val(N))
+
+mutable struct FFTAPlan_cx{T,N,S<:Real} <: FFTAPlan{T,N}
     const callgraph::NTuple{N,CallGraph{T}}
-    const region::R
+    const region::NTuple{N,Int}
     const dir::Direction
     const workers::WorkerPool{T,N,S}
     pinv::AbstractFFTs.ScaledPlan
-    FFTAPlan_cx{T,N,R}(cg::NTuple{N,CallGraph{T}}, r::R, dir::Direction, workers::WorkerPool{T,N,S}) where {T,N,R<:RegionTypes{N},S} =
-        new{T,N,R,S}(cg, r, dir, workers)
+    FFTAPlan_cx{T,N}(cg::NTuple{N,CallGraph{T}}, r::NTuple{N,Int}, dir::Direction, workers::WorkerPool{T,N,S}) where {T,N,S} =
+        new{T,N,S}(cg, r, dir, workers)
 end
 function FFTAPlan_cx{T,N}(
-    cg::NTuple{N,CallGraph{T}}, r::R,
+    cg::NTuple{N,CallGraph{T}}, r::RegionTypes,
     dir::Direction; num_threads::Int=Threads.nthreads()
-) where {T,N,R<:RegionTypes{N}}
-    FFTAPlan_cx{T,N,R}(cg, r, dir, _workers(cg, Val(N), num_threads, 0))
+) where {T,N}
+    FFTAPlan_cx{T,N}(cg, _canon_region(r, Val(N)), dir, _workers(cg, Val(N), num_threads, 0))
 end
 
-mutable struct FFTAPlan_re{T,N,R<:RegionTypes{N},S<:Real} <: FFTAPlan{T,N}
+mutable struct FFTAPlan_re{T,N,S<:Real} <: FFTAPlan{T,N}
     const callgraph::NTuple{N,CallGraph{T}}
-    const region::R
+    const region::NTuple{N,Int}
     const dir::Direction
     const flen::Int
     const workers::WorkerPool{T,N,S}
     pinv::AbstractFFTs.ScaledPlan
     scratch::Any      # lazily cached complex copy for the backward N-d path (see mul!)
-    FFTAPlan_re{T,N,R}(cg::NTuple{N,CallGraph{T}}, r::R, dir::Direction, flen::Int, workers::WorkerPool{T,N,S}) where {T,N,R<:RegionTypes{N},S} =
-        new{T,N,R,S}(cg, r, dir, flen, workers)
+    FFTAPlan_re{T,N}(cg::NTuple{N,CallGraph{T}}, r::NTuple{N,Int}, dir::Direction, flen::Int, workers::WorkerPool{T,N,S}) where {T,N,S} =
+        new{T,N,S}(cg, r, dir, flen, workers)
 end
 
 # the complex passes of the backward real transform must not modify the
@@ -139,10 +146,10 @@ function _re_scratch(p::FFTAPlan_re{T}, x::AbstractArray{T,N})::Array{T,N} where
     return copyto!(p.scratch::Array{T,N}, x)
 end
 function FFTAPlan_re{T,N}(
-    cg::NTuple{N,CallGraph{T}}, r::R,
+    cg::NTuple{N,CallGraph{T}}, r::RegionTypes,
     dir::Direction, flen::Int; num_threads::Int=Threads.nthreads()
-) where {T,N,R<:RegionTypes{N}}
-    FFTAPlan_re{T,N,R}(cg, r, dir, flen, _workers(cg, Val(N), num_threads, _re_buflen(flen, dir), flen))
+) where {T,N}
+    FFTAPlan_re{T,N}(cg, _canon_region(r, Val(N)), dir, flen, _workers(cg, Val(N), num_threads, _re_buflen(flen, dir), flen))
 end
 
 _num_threads(p::Union{FFTAPlan_cx,FFTAPlan_re}) = length(p.workers)
@@ -1056,21 +1063,21 @@ function AbstractFFTs.adjoint_mul(p::FFTAPlan_re{T}, x::AbstractArray, ::Abstrac
     return (convert(typeof(x), scale) ./ N) .* (p \ x)
 end
 
-function AbstractFFTs.plan_inv(p::FFTAPlan_cx{T,N,R}) where {T,N,R}
+function AbstractFFTs.plan_inv(p::FFTAPlan_cx{T,N}) where {T,N}
     dir = p.dir === FFT_FORWARD ? FFT_BACKWARD : FFT_FORWARD
     cutoff = p.callgraph[1].BLUESTEIN_CUTOFF
     cg = ntuple(i -> CallGraph{T}(size(p, i), cutoff, dir; num_threads = _num_threads(p)), Val(N))
-    q = FFTAPlan_cx{T,N,R}(cg, p.region, dir, _workers(cg, Val(N), _num_threads(p), 0))
+    q = FFTAPlan_cx{T,N}(cg, p.region, dir, _workers(cg, Val(N), _num_threads(p), 0))
     AbstractFFTs.ScaledPlan(q, _normalization(p))
 end
 
-function AbstractFFTs.plan_inv(p::FFTAPlan_re{T,N,R,S}) where {T,N,R,S}
+function AbstractFFTs.plan_inv(p::FFTAPlan_re{T,N}) where {T,N}
     dir = p.dir === FFT_FORWARD ? FFT_BACKWARD : FFT_FORWARD
     cutoff = p.callgraph[1].BLUESTEIN_CUTOFF
     n = p.flen
     nn = iseven(n) ? n >> 1 : n
     cg = (CallGraph{T}(nn, cutoff, dir; num_threads = _num_threads(p)), ntuple(i -> CallGraph{T}(size(p, i + 1), cutoff, dir; num_threads = _num_threads(p)), Val(N - 1))...)
-    q = FFTAPlan_re{T,N,R}(cg, p.region, dir, n, _workers(cg, Val(N), _num_threads(p), _re_buflen(n, dir), n))
+    q = FFTAPlan_re{T,N}(cg, p.region, dir, n, _workers(cg, Val(N), _num_threads(p), _re_buflen(n, dir), n))
     AbstractFFTs.ScaledPlan(q, _normalization(p))
 end
 
@@ -1085,11 +1092,11 @@ _normalization(p::FFTAPlan{T,N}) where {T,N} =
 # and, when the input and output alias, transforms a copy of the input held
 # in the plan's buffer.
 
-mutable struct FFTAPlan_inplace{T,N,M,P<:FFTAPlan_cx{T,M}} <: FFTAPlan{T,M}
-    const p::P
+mutable struct FFTAPlan_inplace{T,N,M,S} <: FFTAPlan{T,M}
+    const p::FFTAPlan_cx{T,M,S}
     const buf::Array{T,N}   # copy of the input when it aliases the output
     pinv::AbstractFFTs.ScaledPlan
-    FFTAPlan_inplace(p::P, buf::Array{T,N}) where {T,N,M,P<:FFTAPlan_cx{T,M}} = new{T,N,M,P}(p, buf)
+    FFTAPlan_inplace(p::FFTAPlan_cx{T,M,S}, buf::Array{T,N}) where {T,N,M,S} = new{T,N,M,S}(p, buf)
 end
 AbstractFFTs.AdjointStyle(p::FFTAPlan_inplace) = AbstractFFTs.AdjointStyle(p.p)
 AbstractFFTs.fftdims(p::FFTAPlan_inplace) = AbstractFFTs.fftdims(p.p)
