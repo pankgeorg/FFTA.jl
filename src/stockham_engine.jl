@@ -61,6 +61,18 @@ const _STOCKHAM_VECTOR_BITS = _host_vector_bits()
 _stockham_width(::Type{Float64}) = _STOCKHAM_VECTOR_BITS ÷ 64
 _stockham_width(::Type{Float32}) = _STOCKHAM_VECTOR_BITS ÷ 32
 
+# Flag-independent loads and stores: `--check-bounds=yes` (which `Pkg.test`
+# uses) disables `@inbounds`, so array-form SIMD ops would pay a range check
+# per vector. These go through the data pointer — the per-op `GC.@preserve`
+# keeps the array rooted and compiles away.
+@inline _sld(::Type{Vec{W,S}}, a, i::Int) where {W,S} =
+    GC.@preserve a vload(Vec{W,S}, pointer(a) + (i - 1) * sizeof(S))
+@inline _sst!(a, i::Int, v::Vec{W,S}) where {W,S} =
+    GC.@preserve a vstore(v, pointer(a) + (i - 1) * sizeof(S))
+@inline _sst!(a, i::Int, v) =
+    GC.@preserve a unsafe_store!(pointer(a), convert(eltype(a), v), i)
+@inline _sget(a, i::Int) = GC.@preserve a unsafe_load(pointer(a), i)
+
 # Threading: each stage is one full pass over the planes, split into chunks of
 # its outer index (butterfly index `p`, or W-aligned lane blocks). Chunks write
 # disjoint regions and compute the same expressions, so threaded results are
@@ -311,8 +323,8 @@ end
         end
     end
 end
-@inline _sstore!(a, i, v::Vec) = vstore(v, a, i)
-@inline _sstore!(a, i, v) = (@inbounds a[i] = v)
+@inline _sstore!(a, i, v::Vec) = _sst!(a, i, v)
+@inline _sstore!(a, i, v) = _sst!(a, i, v)
 @generated function _sodd_store!(yre, yim, ys::NT, wr::NTW, wi::NTW, yb::Int, s::Int, q::Int) where {NT<:Tuple,NTW<:Tuple}
     M = length(NTW.parameters)
     exs = [quote
@@ -374,42 +386,42 @@ function _stage4!(yre::Vector{S}, yim::Vector{S}, xre::Vector{S}, xim::Vector{S}
     twr = tw.twr; twi = tw.twi
     if s < W
         @inbounds for p in lo-1:hi-1
-            w1r = twr[3p+1]; w1i = twi[3p+1]; w2r = twr[3p+2]; w2i = twi[3p+2]; w3r = twr[3p+3]; w3i = twi[3p+3]
+            w1r = _sget(twr, 3p+1); w1i = _sget(twi, 3p+1); w2r = _sget(twr, 3p+2); w2i = _sget(twi, 3p+2); w3r = _sget(twr, 3p+3); w3i = _sget(twi, 3p+3)
             xb = s * p; yb = 4s * p
             for q in 1:s
                 y0r, y0i, t1r, t1i, t2r, t2i, t3r, t3i = _sbf4(
-                    xre[xb+q], xim[xb+q], xre[xb+ms+q], xim[xb+ms+q],
-                    xre[xb+2ms+q], xim[xb+2ms+q], xre[xb+3ms+q], xim[xb+3ms+q], Val(D))
+                    _sget(xre, xb+q), _sget(xim, xb+q), _sget(xre, xb+ms+q), _sget(xim, xb+ms+q),
+                    _sget(xre, xb+2ms+q), _sget(xim, xb+2ms+q), _sget(xre, xb+3ms+q), _sget(xim, xb+3ms+q), Val(D))
                 y1r, y1i = _scmul(w1r, w1i, t1r, t1i)
                 y2r, y2i = _scmul(w2r, w2i, t2r, t2i)
                 y3r, y3i = _scmul(w3r, w3i, t3r, t3i)
-                yre[yb+q] = y0r;    yim[yb+q] = y0i
-                yre[yb+s+q] = y1r;  yim[yb+s+q] = y1i
-                yre[yb+2s+q] = y2r; yim[yb+2s+q] = y2i
-                yre[yb+3s+q] = y3r; yim[yb+3s+q] = y3i
+                _sst!(yre, yb+q, y0r);    _sst!(yim, yb+q, y0i)
+                _sst!(yre, yb+s+q, y1r);  _sst!(yim, yb+s+q, y1i)
+                _sst!(yre, yb+2s+q, y2r); _sst!(yim, yb+2s+q, y2i)
+                _sst!(yre, yb+3s+q, y3r); _sst!(yim, yb+3s+q, y3i)
             end
         end
         return nothing
     end
     V = Vec{W,S}
     @inbounds for p in lo-1:hi-1
-        w1r = V(twr[3p+1]); w1i = V(twi[3p+1]); w2r = V(twr[3p+2]); w2i = V(twi[3p+2]); w3r = V(twr[3p+3]); w3i = V(twi[3p+3])
+        w1r = V(_sget(twr, 3p+1)); w1i = V(_sget(twi, 3p+1)); w2r = V(_sget(twr, 3p+2)); w2i = V(_sget(twi, 3p+2)); w3r = V(_sget(twr, 3p+3)); w3i = V(_sget(twi, 3p+3))
         xb = s * p; yb = 4s * p
         for b in qlo:qhi
             q0 = (b - 1) * W + 1
             q = q0 + W - 1 <= s ? q0 : s - W + 1
-            ar = vload(V, xre, xb + q);        ai = vload(V, xim, xb + q)
-            br = vload(V, xre, xb + ms + q);   bi = vload(V, xim, xb + ms + q)
-            cr = vload(V, xre, xb + 2ms + q);  ci = vload(V, xim, xb + 2ms + q)
-            dr = vload(V, xre, xb + 3ms + q);  di = vload(V, xim, xb + 3ms + q)
+            ar = _sld(V, xre, xb + q);        ai = _sld(V, xim, xb + q)
+            br = _sld(V, xre, xb + ms + q);   bi = _sld(V, xim, xb + ms + q)
+            cr = _sld(V, xre, xb + 2ms + q);  ci = _sld(V, xim, xb + 2ms + q)
+            dr = _sld(V, xre, xb + 3ms + q);  di = _sld(V, xim, xb + 3ms + q)
             y0r, y0i, t1r, t1i, t2r, t2i, t3r, t3i = _sbf4(ar, ai, br, bi, cr, ci, dr, di, Val(D))
             y1r, y1i = _scmul(w1r, w1i, t1r, t1i)
             y2r, y2i = _scmul(w2r, w2i, t2r, t2i)
             y3r, y3i = _scmul(w3r, w3i, t3r, t3i)
-            vstore(y0r, yre, yb + q);      vstore(y0i, yim, yb + q)
-            vstore(y1r, yre, yb + s + q);  vstore(y1i, yim, yb + s + q)
-            vstore(y2r, yre, yb + 2s + q); vstore(y2i, yim, yb + 2s + q)
-            vstore(y3r, yre, yb + 3s + q); vstore(y3i, yim, yb + 3s + q)
+            _sst!(yre, yb + q, y0r);      _sst!(yim, yb + q, y0i)
+            _sst!(yre, yb + s + q, y1r);  _sst!(yim, yb + s + q, y1i)
+            _sst!(yre, yb + 2s + q, y2r); _sst!(yim, yb + 2s + q, y2i)
+            _sst!(yre, yb + 3s + q, y3r); _sst!(yim, yb + 3s + q, y3i)
         end
     end
     return nothing
@@ -423,13 +435,13 @@ function _stage4_small!(yre::Vector{S}, yim::Vector{S}, xre, xim, n::Int, ::Val{
     V = Vec{W,S}
     @inbounds for b in lo:hi
         f = (b - 1) * W + 1
-        w1r = vload(V, twr, f);       w1i = vload(V, twi, f)
-        w2r = vload(V, twr, ms + f);  w2i = vload(V, twi, ms + f)
-        w3r = vload(V, twr, 2ms + f); w3i = vload(V, twi, 2ms + f)
-        ar = vload(V, xre, f);        ai = vload(V, xim, f)
-        br = vload(V, xre, ms + f);   bi = vload(V, xim, ms + f)
-        cr = vload(V, xre, 2ms + f);  ci = vload(V, xim, 2ms + f)
-        dr = vload(V, xre, 3ms + f);  di = vload(V, xim, 3ms + f)
+        w1r = _sld(V, twr, f);       w1i = _sld(V, twi, f)
+        w2r = _sld(V, twr, ms + f);  w2i = _sld(V, twi, ms + f)
+        w3r = _sld(V, twr, 2ms + f); w3i = _sld(V, twi, 2ms + f)
+        ar = _sld(V, xre, f);        ai = _sld(V, xim, f)
+        br = _sld(V, xre, ms + f);   bi = _sld(V, xim, ms + f)
+        cr = _sld(V, xre, 2ms + f);  ci = _sld(V, xim, 2ms + f)
+        dr = _sld(V, xre, 3ms + f);  di = _sld(V, xim, 3ms + f)
         y0r, y0i, t1r, t1i, t2r, t2i, t3r, t3i = _sbf4(ar, ai, br, bi, cr, ci, dr, di, Val(D))
         y1r, y1i = _scmul(w1r, w1i, t1r, t1i)
         y2r, y2i = _scmul(w2r, w2i, t2r, t2i)
@@ -437,10 +449,10 @@ function _stage4_small!(yre::Vector{S}, yim::Vector{S}, xre, xim, n::Int, ::Val{
         o0r, o1r, o2r, o3r = _sileave4(y0r, y1r, y2r, y3r, Val(G))
         o0i, o1i, o2i, o3i = _sileave4(y0i, y1i, y2i, y3i, Val(G))
         base = 4 * (f - 1)
-        vstore(o0r, yre, base + 1);      vstore(o0i, yim, base + 1)
-        vstore(o1r, yre, base + W + 1);  vstore(o1i, yim, base + W + 1)
-        vstore(o2r, yre, base + 2W + 1); vstore(o2i, yim, base + 2W + 1)
-        vstore(o3r, yre, base + 3W + 1); vstore(o3i, yim, base + 3W + 1)
+        _sst!(yre, base + 1, o0r);      _sst!(yim, base + 1, o0i)
+        _sst!(yre, base + W + 1, o1r);  _sst!(yim, base + W + 1, o1i)
+        _sst!(yre, base + 2W + 1, o2r); _sst!(yim, base + 2W + 1, o2i)
+        _sst!(yre, base + 3W + 1, o3r); _sst!(yim, base + 3W + 1, o3i)
     end
     return nothing
 end
@@ -449,9 +461,9 @@ function _stage2!(yre::Vector{S}, yim::Vector{S}, xre, xim, s::Int, lo::Int, hi:
     W = _stockham_width(S)
     if s < W
         @inbounds for q in 1:s
-            ar = xre[q]; ai = xim[q]; br = xre[s+q]; bi = xim[s+q]
-            yre[q] = ar + br;   yim[q] = ai + bi
-            yre[s+q] = ar - br; yim[s+q] = ai - bi
+            ar = _sget(xre, q); ai = _sget(xim, q); br = _sget(xre, s+q); bi = _sget(xim, s+q)
+            _sst!(yre, q, ar + br);   _sst!(yim, q, ai + bi)
+            _sst!(yre, s+q, ar - br); _sst!(yim, s+q, ai - bi)
         end
         return nothing
     end
@@ -459,10 +471,10 @@ function _stage2!(yre::Vector{S}, yim::Vector{S}, xre, xim, s::Int, lo::Int, hi:
     @inbounds for b in lo:hi
         q0 = (b - 1) * W + 1
         q = q0 + W - 1 <= s ? q0 : s - W + 1
-        ar = vload(V, xre, q); ai = vload(V, xim, q)
-        br = vload(V, xre, s + q); bi = vload(V, xim, s + q)
-        vstore(ar + br, yre, q);     vstore(ai + bi, yim, q)
-        vstore(ar - br, yre, s + q); vstore(ai - bi, yim, s + q)
+        ar = _sld(V, xre, q); ai = _sld(V, xim, q)
+        br = _sld(V, xre, s + q); bi = _sld(V, xim, s + q)
+        _sst!(yre, q, ar + br);     _sst!(yim, q, ai + bi)
+        _sst!(yre, s + q, ar - br); _sst!(yim, s + q, ai - bi)
     end
     return nothing
 end
@@ -479,17 +491,17 @@ function _stage8!(yre::Vector{S}, yim::Vector{S}, xre, xim, s::Int, ::Val{D}, lo
     if s < W
         c = S(sqrt(0.5))
         @inbounds for q in 1:s
-            e = _sbf4(xre[q], xim[q], xre[2s+q], xim[2s+q], xre[4s+q], xim[4s+q], xre[6s+q], xim[6s+q], Val(D))
-            o = _sbf4(xre[s+q], xim[s+q], xre[3s+q], xim[3s+q], xre[5s+q], xim[5s+q], xre[7s+q], xim[7s+q], Val(D))
+            e = _sbf4(_sget(xre, q), _sget(xim, q), _sget(xre, 2s+q), _sget(xim, 2s+q), _sget(xre, 4s+q), _sget(xim, 4s+q), _sget(xre, 6s+q), _sget(xim, 6s+q), Val(D))
+            o = _sbf4(_sget(xre, s+q), _sget(xim, s+q), _sget(xre, 3s+q), _sget(xim, 3s+q), _sget(xre, 5s+q), _sget(xim, 5s+q), _sget(xre, 7s+q), _sget(xim, 7s+q), Val(D))
             t1r, t1i, t2r, t2i, t3r, t3i = _bf8_tail(o, c, Val(D))
-            yre[q] = e[1] + o[1];      yim[q] = e[2] + o[2]
-            yre[s+q] = e[3] + t1r;     yim[s+q] = e[4] + t1i
-            yre[2s+q] = e[5] + t2r;    yim[2s+q] = e[6] + t2i
-            yre[3s+q] = e[7] + t3r;    yim[3s+q] = e[8] + t3i
-            yre[4s+q] = e[1] - o[1];   yim[4s+q] = e[2] - o[2]
-            yre[5s+q] = e[3] - t1r;    yim[5s+q] = e[4] - t1i
-            yre[6s+q] = e[5] - t2r;    yim[6s+q] = e[6] - t2i
-            yre[7s+q] = e[7] - t3r;    yim[7s+q] = e[8] - t3i
+            _sst!(yre, q, e[1] + o[1]);      _sst!(yim, q, e[2] + o[2])
+            _sst!(yre, s+q, e[3] + t1r);     _sst!(yim, s+q, e[4] + t1i)
+            _sst!(yre, 2s+q, e[5] + t2r);    _sst!(yim, 2s+q, e[6] + t2i)
+            _sst!(yre, 3s+q, e[7] + t3r);    _sst!(yim, 3s+q, e[8] + t3i)
+            _sst!(yre, 4s+q, e[1] - o[1]);   _sst!(yim, 4s+q, e[2] - o[2])
+            _sst!(yre, 5s+q, e[3] - t1r);    _sst!(yim, 5s+q, e[4] - t1i)
+            _sst!(yre, 6s+q, e[5] - t2r);    _sst!(yim, 6s+q, e[6] - t2i)
+            _sst!(yre, 7s+q, e[7] - t3r);    _sst!(yim, 7s+q, e[8] - t3i)
         end
         return nothing
     end
@@ -498,19 +510,19 @@ function _stage8!(yre::Vector{S}, yim::Vector{S}, xre, xim, s::Int, ::Val{D}, lo
     @inbounds for b in lo:hi
         q0 = (b - 1) * W + 1
         q = q0 + W - 1 <= s ? q0 : s - W + 1
-        e = _sbf4(vload(V, xre, q), vload(V, xim, q), vload(V, xre, 2s + q), vload(V, xim, 2s + q),
-                  vload(V, xre, 4s + q), vload(V, xim, 4s + q), vload(V, xre, 6s + q), vload(V, xim, 6s + q), Val(D))
-        o = _sbf4(vload(V, xre, s + q), vload(V, xim, s + q), vload(V, xre, 3s + q), vload(V, xim, 3s + q),
-                  vload(V, xre, 5s + q), vload(V, xim, 5s + q), vload(V, xre, 7s + q), vload(V, xim, 7s + q), Val(D))
+        e = _sbf4(_sld(V, xre, q), _sld(V, xim, q), _sld(V, xre, 2s + q), _sld(V, xim, 2s + q),
+                  _sld(V, xre, 4s + q), _sld(V, xim, 4s + q), _sld(V, xre, 6s + q), _sld(V, xim, 6s + q), Val(D))
+        o = _sbf4(_sld(V, xre, s + q), _sld(V, xim, s + q), _sld(V, xre, 3s + q), _sld(V, xim, 3s + q),
+                  _sld(V, xre, 5s + q), _sld(V, xim, 5s + q), _sld(V, xre, 7s + q), _sld(V, xim, 7s + q), Val(D))
         t1r, t1i, t2r, t2i, t3r, t3i = _bf8_tail(o, c, Val(D))
-        vstore(e[1] + o[1], yre, q);      vstore(e[2] + o[2], yim, q)
-        vstore(e[3] + t1r, yre, s + q);   vstore(e[4] + t1i, yim, s + q)
-        vstore(e[5] + t2r, yre, 2s + q);  vstore(e[6] + t2i, yim, 2s + q)
-        vstore(e[7] + t3r, yre, 3s + q);  vstore(e[8] + t3i, yim, 3s + q)
-        vstore(e[1] - o[1], yre, 4s + q); vstore(e[2] - o[2], yim, 4s + q)
-        vstore(e[3] - t1r, yre, 5s + q);  vstore(e[4] - t1i, yim, 5s + q)
-        vstore(e[5] - t2r, yre, 6s + q);  vstore(e[6] - t2i, yim, 6s + q)
-        vstore(e[7] - t3r, yre, 7s + q);  vstore(e[8] - t3i, yim, 7s + q)
+        _sst!(yre, q, e[1] + o[1]);      _sst!(yim, q, e[2] + o[2])
+        _sst!(yre, s + q, e[3] + t1r);   _sst!(yim, s + q, e[4] + t1i)
+        _sst!(yre, 2s + q, e[5] + t2r);  _sst!(yim, 2s + q, e[6] + t2i)
+        _sst!(yre, 3s + q, e[7] + t3r);  _sst!(yim, 3s + q, e[8] + t3i)
+        _sst!(yre, 4s + q, e[1] - o[1]); _sst!(yim, 4s + q, e[2] - o[2])
+        _sst!(yre, 5s + q, e[3] - t1r);  _sst!(yim, 5s + q, e[4] - t1i)
+        _sst!(yre, 6s + q, e[5] - t2r);  _sst!(yim, 6s + q, e[6] - t2i)
+        _sst!(yre, 7s + q, e[7] - t3r);  _sst!(yim, 7s + q, e[8] - t3i)
     end
     return nothing
 end
@@ -528,31 +540,31 @@ function _stagep!(yre::Vector{S}, yim::Vector{S}, xre, xim, n::Int, s::Int,
         ccv = _svbroad(V, cc)
         ssv = _svbroad(V, ss)
         @inbounds for p in lo-1:hi-1
-            wr = ntuple(j -> V(@inbounds twr[(P-1)*p+j]), Val(P - 1))
-            wi = ntuple(j -> V(@inbounds twi[(P-1)*p+j]), Val(P - 1))
+            wr = ntuple(j -> V(@inbounds _sget(twr, (P-1)*p+j)), Val(P - 1))
+            wi = ntuple(j -> V(@inbounds _sget(twi, (P-1)*p+j)), Val(P - 1))
             xb = s * p; yb = P * s * p
             for b in qlo:qhi
                 q = (b - 1) * W + 1
                 qq = q + W - 1 <= s ? q : s - W + 1
-                xsr = ntuple(j -> @inbounds(vload(V, xre, xb + (j - 1) * ms + qq)), Val(P))
-                xsi = ntuple(j -> @inbounds(vload(V, xim, xb + (j - 1) * ms + qq)), Val(P))
+                xsr = ntuple(j -> @inbounds(_sld(V, xre, xb + (j - 1) * ms + qq)), Val(P))
+                xsi = ntuple(j -> @inbounds(_sld(V, xim, xb + (j - 1) * ms + qq)), Val(P))
                 ys = _sbfp(xsr, xsi, ccv, ssv)
-                vstore(ys[1], yre, yb + qq)
-                vstore(ys[2], yim, yb + qq)
+                _sst!(yre, yb + qq, ys[1])
+                _sst!(yim, yb + qq, ys[2])
                 _sodd_store!(yre, yim, ys, wr, wi, yb, s, qq)
             end
         end
     else
         @inbounds for p in lo-1:hi-1
-            wr = ntuple(j -> @inbounds(twr[(P-1)*p+j]), Val(P - 1))
-            wi = ntuple(j -> @inbounds(twi[(P-1)*p+j]), Val(P - 1))
+            wr = ntuple(j -> @inbounds(_sget(twr, (P-1)*p+j)), Val(P - 1))
+            wi = ntuple(j -> @inbounds(_sget(twi, (P-1)*p+j)), Val(P - 1))
             xb = s * p; yb = P * s * p
             for q in 1:s
-                xsr = ntuple(j -> @inbounds(xre[xb+(j-1)*ms+q]), Val(P))
-                xsi = ntuple(j -> @inbounds(xim[xb+(j-1)*ms+q]), Val(P))
+                xsr = ntuple(j -> @inbounds(_sget(xre, xb+(j-1)*ms+q)), Val(P))
+                xsi = ntuple(j -> @inbounds(_sget(xim, xb+(j-1)*ms+q)), Val(P))
                 ys = _sbfp(xsr, xsi, cc, ss)
-                yre[yb+q] = ys[1]
-                yim[yb+q] = ys[2]
+                _sst!(yre, yb+q, ys[1])
+                _sst!(yim, yb+q, ys[2])
                 _sodd_store!(yre, yim, ys, wr, wi, yb, s, q)
             end
         end
@@ -586,9 +598,9 @@ function _stage4_first_fused!(yre::Vector{S}, yim::Vector{S}, x::Vector{Complex{
             cr, ci = _sdeint2(u, v)
             u = vload(V, px + sz * (b0 + 6m));     v = vload(V, px + sz * (b0 + 6m + W))
             dr, di = _sdeint2(u, v)
-            w1r = vload(V, twr, f);       w1i = vload(V, twi, f)
-            w2r = vload(V, twr, m + f);   w2i = vload(V, twi, m + f)
-            w3r = vload(V, twr, 2m + f);  w3i = vload(V, twi, 2m + f)
+            w1r = _sld(V, twr, f);       w1i = _sld(V, twi, f)
+            w2r = _sld(V, twr, m + f);   w2i = _sld(V, twi, m + f)
+            w3r = _sld(V, twr, 2m + f);  w3i = _sld(V, twi, 2m + f)
             y0r, y0i, t1r, t1i, t2r, t2i, t3r, t3i = _sbf4(ar, ai, br, bi, cr, ci, dr, di, Val(D))
             y1r, y1i = _scmul(w1r, w1i, t1r, t1i)
             y2r, y2i = _scmul(w2r, w2i, t2r, t2i)
@@ -596,10 +608,10 @@ function _stage4_first_fused!(yre::Vector{S}, yim::Vector{S}, x::Vector{Complex{
             o0r, o1r, o2r, o3r = _sileave4(y0r, y1r, y2r, y3r, Val(1))
             o0i, o1i, o2i, o3i = _sileave4(y0i, y1i, y2i, y3i, Val(1))
             base = 4 * (f - 1)
-            vstore(o0r, yre, base + 1);      vstore(o0i, yim, base + 1)
-            vstore(o1r, yre, base + W + 1);  vstore(o1i, yim, base + W + 1)
-            vstore(o2r, yre, base + 2W + 1); vstore(o2i, yim, base + 2W + 1)
-            vstore(o3r, yre, base + 3W + 1); vstore(o3i, yim, base + 3W + 1)
+            _sst!(yre, base + 1, o0r);      _sst!(yim, base + 1, o0i)
+            _sst!(yre, base + W + 1, o1r);  _sst!(yim, base + W + 1, o1i)
+            _sst!(yre, base + 2W + 1, o2r); _sst!(yim, base + 2W + 1, o2i)
+            _sst!(yre, base + 3W + 1, o3r); _sst!(yim, base + 3W + 1, o3i)
         end
     end
     return nothing
@@ -616,8 +628,8 @@ function _stage4_last_fused!(y::Vector{Complex{S}}, start_out::Int, xre::Vector{
         @inbounds for b in lo:hi
             q0 = (b - 1) * W + 1
             q = q0 + W - 1 <= s ? q0 : s - W + 1
-            e = _sbf4(vload(V, xre, q), vload(V, xim, q), vload(V, xre, s + q), vload(V, xim, s + q),
-                      vload(V, xre, 2s + q), vload(V, xim, 2s + q), vload(V, xre, 3s + q), vload(V, xim, 3s + q), Val(D))
+            e = _sbf4(_sld(V, xre, q), _sld(V, xim, q), _sld(V, xre, s + q), _sld(V, xim, s + q),
+                      _sld(V, xre, 2s + q), _sld(V, xim, 2s + q), _sld(V, xre, 3s + q), _sld(V, xim, 3s + q), Val(D))
             Base.Cartesian.@nexprs 4 j -> begin
                 lo, hi = _sint2(e[2j-1], e[2j])
                 c0 = (j - 1) * s + q - 1
@@ -639,10 +651,10 @@ function _stage8_last_fused!(y::Vector{Complex{S}}, start_out::Int, xre::Vector{
         @inbounds for b in lo:hi
             q0 = (b - 1) * W + 1
             q = q0 + W - 1 <= s ? q0 : s - W + 1
-            e = _sbf4(vload(V, xre, q), vload(V, xim, q), vload(V, xre, 2s + q), vload(V, xim, 2s + q),
-                      vload(V, xre, 4s + q), vload(V, xim, 4s + q), vload(V, xre, 6s + q), vload(V, xim, 6s + q), Val(D))
-            o = _sbf4(vload(V, xre, s + q), vload(V, xim, s + q), vload(V, xre, 3s + q), vload(V, xim, 3s + q),
-                      vload(V, xre, 5s + q), vload(V, xim, 5s + q), vload(V, xre, 7s + q), vload(V, xim, 7s + q), Val(D))
+            e = _sbf4(_sld(V, xre, q), _sld(V, xim, q), _sld(V, xre, 2s + q), _sld(V, xim, 2s + q),
+                      _sld(V, xre, 4s + q), _sld(V, xim, 4s + q), _sld(V, xre, 6s + q), _sld(V, xim, 6s + q), Val(D))
+            o = _sbf4(_sld(V, xre, s + q), _sld(V, xim, s + q), _sld(V, xre, 3s + q), _sld(V, xim, 3s + q),
+                      _sld(V, xre, 5s + q), _sld(V, xim, 5s + q), _sld(V, xre, 7s + q), _sld(V, xim, 7s + q), Val(D))
             t1r, t1i, t2r, t2i, t3r, t3i = _bf8_tail(o, c, Val(D))
             ys = (e[1] + o[1], e[2] + o[2], e[3] + t1r, e[4] + t1i, e[5] + t2r, e[6] + t2i, e[7] + t3r, e[8] + t3i,
                   e[1] - o[1], e[2] - o[2], e[3] - t1r, e[4] - t1i, e[5] - t2r, e[6] - t2i, e[7] - t3r, e[8] - t3i)
@@ -665,8 +677,8 @@ function _stage2_last_fused!(y::Vector{Complex{S}}, start_out::Int, xre::Vector{
         @inbounds for b in lo:hi
             q0 = (b - 1) * W + 1
             q = q0 + W - 1 <= s ? q0 : s - W + 1
-            ar = vload(V, xre, q); ai = vload(V, xim, q)
-            br = vload(V, xre, s + q); bi = vload(V, xim, s + q)
+            ar = _sld(V, xre, q); ai = _sld(V, xim, q)
+            br = _sld(V, xre, s + q); bi = _sld(V, xim, s + q)
             lo, hi = _sint2(ar + br, ai + bi)
             vstore(lo, py + sz * 2 * (q - 1)); vstore(hi, py + sz * (2 * (q - 1) + W))
             lo, hi = _sint2(ar - br, ai - bi)
@@ -739,8 +751,8 @@ function _sdeint_blocks!(are::Vector{S}, aim::Vector{S}, x::Vector{Complex{S}}, 
             u = vload(V, px + sz * 2 * (c - 1))
             v = vload(V, px + sz * (2 * (c - 1) + W))
             r, i = _sdeint2(u, v)
-            vstore(r, are, c)
-            vstore(i, aim, c)
+            _sst!(are, c, r)
+            _sst!(aim, c, i)
         end
     end
     return nothing
@@ -755,8 +767,8 @@ function _sint_blocks!(y::Vector{Complex{S}}, start_out::Int, are::Vector{S}, ai
         @inbounds for b in lo:hi
             c0 = (b - 1) * W + 1
             c = c0 + W - 1 <= n ? c0 : n - W + 1
-            r = vload(V, are, c)
-            i = vload(V, aim, c)
+            r = _sld(V, are, c)
+            i = _sld(V, aim, c)
             l, h = _sint2(r, i)
             vstore(l, py + sz * 2 * (c - 1))
             vstore(h, py + sz * (2 * (c - 1) + W))
@@ -920,8 +932,8 @@ function _stockham_pencil_batch!(avout::AbstractVector{Complex{S}}, avin::Abstra
         jb = (j - 1) * B
         for b in 1:B
             z = avin[o+b]
-            xr[jb+b] = real(z)
-            xi[jb+b] = imag(z)
+            _sst!(xr, jb + b, real(z))
+            _sst!(xi, jb + b, imag(z))
         end
     end
     W = _stockham_width(S)
