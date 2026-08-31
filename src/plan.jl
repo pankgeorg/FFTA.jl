@@ -416,15 +416,15 @@ function _mul_loop!(
         return nothing
     end
     if R > 1 && x isa Array{T,N} && y isa Array{T,N} && y !== x &&
-       p.workers.workers[1].callgraph[1][1].type === STOCKHAM
+       (p.workers.workers[1].callgraph[1][1].type === STOCKHAM ||
+        (T <: CodeletEltype && 20 <= n < 32 && _stockham_smooth(n)))
         S = real(T)
         W = _stockham_width(S)
-        npre = 1
-        for i in 1:R-1
-            npre *= size(x, i)
-        end
+        npre = _prestride(x, Val(R))
         B = npre % 16 == 0 && 16 % W == 0 ? 16 :
-            npre % 8 == 0 && 8 % W == 0 ? 8 : 0
+            npre % 8 == 0 && 8 % W == 0 ? 8 :
+            n < 32 && npre % 4 == 0 && 4 % W == 0 ? 4 :
+            n < 32 && npre % 3 == 0 && W <= 3 ? 3 : 0
         if B > 0
             _batch_along_dim!(vec(y), vec(x), npre, n, length(x) ÷ (npre * n), B, dir, p.workers)
             return nothing
@@ -620,16 +620,18 @@ function fft_along_dim!(
         end
         return nothing
     end
-    if A isa Array{T,N} && workers.workers[1].callgraph[k][1].type === STOCKHAM
-        # batched pencils: `B` adjacent dim-1-contiguous pencils per kernel run
+    if A isa Array{T,N} && (workers.workers[1].callgraph[k][1].type === STOCKHAM ||
+                            (T <: CodeletEltype && 20 <= n < 32 && _stockham_smooth(n)))
+        # batched pencils: `B` adjacent dim-1-contiguous pencils per kernel run.
+        # Smooth 20..31-point pencils also batch through the engine (2-3x over
+        # per-pencil codelets); small B only pays off in that regime.
         S = real(T)
         W = _stockham_width(S)
-        npre = 1
-        for i in 1:dim-1
-            npre *= size(A, i)
-        end
+        npre = _prestride(A, Val(dim))
         B = npre % 16 == 0 && 16 % W == 0 ? 16 :
-            npre % 8 == 0 && 8 % W == 0 ? 8 : 0
+            npre % 8 == 0 && 8 % W == 0 ? 8 :
+            n < 32 && npre % 4 == 0 && 4 % W == 0 ? 4 :
+            n < 32 && npre % 3 == 0 && W <= 3 ? 3 : 0
         if B > 0
             av = vec(A)
             _batch_along_dim!(av, av, npre, n, length(A) ÷ (npre * n), B, d, workers)
