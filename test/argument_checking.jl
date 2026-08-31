@@ -129,21 +129,19 @@ end
     end
 end
 
-@testset "Invalid / mutated dims" verbose=true begin
-    @testset "Extra elements" begin
-        for n in 3:5
-            x = rand(ComplexF64, ntuple(_ -> 2, n))
-            p1 = plan_fft(x, [1:n-1;])
-            push!(p1.region, n)
-            @test_throws DimensionMismatch("Region is invalid.") p1 * x
-        end
-    end
-    @testset "Unsorted dims" begin
-        for n in 3:5
-            x = rand(ComplexF64, ntuple(_ -> 2, n))
-            p2 = plan_fft(x, [1:n-1;])
-            p2.region[1:2] = [2, 1]
-            @test_throws DimensionMismatch("Region is invalid.") p2 * x
-        end
+@testset "Regions are canonical and immutable" verbose=true begin
+    # regions used to be stored as the caller's vector, so a plan could be
+    # corrupted after construction (extra or unsorted dims); they are now a
+    # sorted NTuple in a const field — the corruption is impossible
+    for n in 3:5
+        x = rand(ComplexF64, ntuple(_ -> 2, n))
+        p = plan_fft(x, [1:n-1;])
+        @test p.region isa NTuple{n - 1,Int}
+        @test issorted(p.region)
+        @test_throws Exception push!(p.region, n)
+        @test_throws Exception p.region[1:2] = [2, 1]
+        @test_throws Exception (p.region = ntuple(identity, n - 1))
+        # spelling does not change the plan type
+        @test typeof(plan_fft(x, Tuple(1:n-1))) === typeof(p)
     end
 end
