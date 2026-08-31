@@ -400,6 +400,33 @@ function _mul_loop!(
 ) where {T,U,N,R}
     dir = p.dir
     n = size(x, R)
+    if R == 1 && x isa Array{T,N} && y isa Array{T,N} && y !== x
+        # contiguous pencils: the kernels read and write `vec`s of the arrays
+        # directly (the same `Vector{T}` specialisation), no buffer copies
+        xv = vec(x); yv = vec(y)
+        li = LinearIndices(x)
+        _foreach_pencil(x, Val(1), p.workers) do w, Ipre, Ipost
+            cg = w.callgraph[1]
+            base = li[1, Ipost]
+            fft_kernel!(yv, xv, base, base, dir, cg[1].type, cg, 1)
+        end
+        return nothing
+    end
+    if R > 1 && x isa Array{T,N} && y isa Array{T,N} && y !== x &&
+       p.workers.workers[1].callgraph[1][1].type === STOCKHAM
+        S = real(T)
+        W = _stockham_width(S)
+        npre = 1
+        for i in 1:R-1
+            npre *= size(x, i)
+        end
+        B = npre % 16 == 0 && 16 % W == 0 ? 16 :
+            npre % 8 == 0 && 8 % W == 0 ? 8 : 0
+        if B > 0
+            _batch_along_dim!(vec(y), vec(x), npre, n, length(x) ÷ (npre * n), B, dir, p.workers)
+            return nothing
+        end
+    end
     _foreach_pencil(x, Val(R), p.workers) do w, Ipre, Ipost
         cg = w.callgraph[1]
         ibuf = w.ibuf; obuf = w.obuf
@@ -433,14 +460,27 @@ function LinearAlgebra.mul!(
     dir = p.dir
     workers = p.workers
 
-    copyto!(out, X) # operate in-place on output array
+    if out isa Array{T,N} && X isa Array{T,N} && out !== X
+        # fuse the input copy into the first pass: transform dim 1 reading
+        # `X` and writing `out` directly (contiguous pencils, no aliasing)
+        outv = vec(out); Xv = vec(X)
+        li = LinearIndices(X)
+        _foreach_pencil(X, Val(1), workers) do w, Ipre, Ipost
+            cg = w.callgraph[1]
+            base = li[1, Ipost]
+            fft_kernel!(outv, Xv, base, base, dir, cg[1].type, cg, 1)
+        end
+    else
+        copyto!(out, X) # operate in-place on output array
+        fft_along_dim!(out, workers, 1, dir, Val(1))
+    end
 
     if @generated
         quote
-            Base.Cartesian.@nexprs $N dim -> fft_along_dim!(out, workers, dim, dir, Val(dim))
+            Base.Cartesian.@nexprs $N dim -> (dim == 1 || fft_along_dim!(out, workers, dim, dir, Val(dim)))
         end
     else
-        for dim in 1:N
+        for dim in 2:N
             fft_along_dim!(out, workers, dim, dir, Val(dim))
         end
     end
@@ -501,6 +541,38 @@ Transform every pencil of `A` along dimension `dim` in place, using the `k`-th
 call graph of the workers. The kernels read the (strided) pencil directly and
 write the worker's output buffer, which is then copied back.
 """
+function _batch_along_dim!(avout::Vector{T}, av::Vector{T}, npre::Int, n::Int, npost::Int, B::Int,
+                           d::Direction, pool::WorkerPool) where {T<:Complex}
+    S = real(T)
+    D = direction_sign(d)
+    stages = _stockham_batch_stages(S, n, D, B)
+    nbp = npre ÷ B
+    total = nbp * npost
+    nt = min(length(pool), total ÷ 2)
+    if nt > 1 && total * n * B >= THREAD_THRESHOLD
+        bufs = [ntuple(_ -> Vector{S}(undef, n * B), Val(4)) for _ in 1:nt]
+        @batch for c in 1:nt
+            lo = (c - 1) * total ÷ nt + 1
+            hi = c * total ÷ nt
+            xr, xi, yr, yi = bufs[c]
+            for k in lo:hi
+                kpost, kpre = divrem(k - 1, nbp)
+                base = kpre * B + 1 + kpost * npre * n
+                _stockham_pencil_batch!(avout, av, base, npre, B, D, n, stages, xr, xi, yr, yi)
+            end
+        end
+    else
+        xr = Vector{S}(undef, n * B); xi = Vector{S}(undef, n * B)
+        yr = Vector{S}(undef, n * B); yi = Vector{S}(undef, n * B)
+        for k in 1:total
+            kpost, kpre = divrem(k - 1, nbp)
+            base = kpre * B + 1 + kpost * npre * n
+            _stockham_pencil_batch!(avout, av, base, npre, B, D, n, stages, xr, xi, yr, yi)
+        end
+    end
+    return nothing
+end
+
 function fft_along_dim!(
     A::AbstractArray{U,N},
     workers::WorkerPool{T,M},
@@ -508,6 +580,41 @@ function fft_along_dim!(
     ::Val{dim}
 ) where {T <: Complex{<:AbstractFloat}, U, N, M, dim}
     n = size(A, dim)
+    if dim == 1 && A isa Array{T,N}
+        # contiguous pencils, in place: Stockham roots may alias output and
+        # input (the input is consumed into the split planes in the first
+        # stage); other roots transform into the worker buffer and copy back
+        av = vec(A)
+        li = LinearIndices(A)
+        _foreach_pencil(A, Val(1), workers) do w, Ipre, Ipost
+            cg = w.callgraph[k]
+            base = li[1, Ipost]
+            if cg[1].type === STOCKHAM
+                fft_kernel!(av, av, base, base, d, STOCKHAM, cg, 1)
+            else
+                obuf = w.obuf
+                fft_kernel!(obuf, av, 1, base, d, cg[1].type, cg, 1)
+                copyto!(av, base, obuf, 1, n)
+            end
+        end
+        return nothing
+    end
+    if A isa Array{T,N} && workers.workers[1].callgraph[k][1].type === STOCKHAM
+        # batched pencils: `B` adjacent dim-1-contiguous pencils per kernel run
+        S = real(T)
+        W = _stockham_width(S)
+        npre = 1
+        for i in 1:dim-1
+            npre *= size(A, i)
+        end
+        B = npre % 16 == 0 && 16 % W == 0 ? 16 :
+            npre % 8 == 0 && 8 % W == 0 ? 8 : 0
+        if B > 0
+            av = vec(A)
+            _batch_along_dim!(av, av, npre, n, length(A) ÷ (npre * n), B, d, workers)
+            return nothing
+        end
+    end
     _foreach_pencil(A, Val(dim), workers) do w, Ipre, Ipost
         cg = w.callgraph[k]
         ibuf = w.ibuf; obuf = w.obuf

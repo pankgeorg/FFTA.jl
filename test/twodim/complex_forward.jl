@@ -37,7 +37,10 @@ end
             x = randn(ComplexF64, ntuple(i -> n + (i - 1), N + 1))
 
             t = Tuple(r)    # test tuple region argument
-            @test fft(x, t) == fft(x, r) == mapslices(fft, x; dims = r)
+            @test fft(x, t) == fft(x, r)
+            # batched pencils round at ulp level differently from the
+            # dims-subset path, like differently-shaped FFTW plans do
+            @test fft(x, r) ≈ mapslices(fft, x; dims = r)
         end
     end
 end

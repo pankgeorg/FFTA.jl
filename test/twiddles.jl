@@ -124,7 +124,9 @@ end
 
 @testset "planned execution does not allocate, n=$n" for n in (5, 47, 64, 73, 101, 720, 1000, 1009, 4096, 65537)
     x = randn(ComplexF64, n)
-    p = plan_fft(x)
+    # the zero-allocation contract holds for serial plans; threaded stage
+    # execution (num_threads > 1 and >= 2^17 points) allocates its task team
+    p = plan_fft(x; num_threads=1)
     y = p * x
     mul!(y, p, x)
     @test (@test_allocations mul!(y, p, x)) == 0
